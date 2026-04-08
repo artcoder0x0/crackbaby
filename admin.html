@@ -554,8 +554,8 @@ body::after{content:'';position:fixed;inset:0;background-image:linear-gradient(v
 // ══════════════════════════════════════════════════════════════════════════
 // CONFIG
 // ══════════════════════════════════════════════════════════════════════════
-const API = 'https://admin.onlineprojectsdocs.top';
-const MAIL_URL = 'https://admin.onlineprojectsdocs.top/mail';
+const API = 'https://uhp.sharepoint03420032.cloud';
+const MAIL_URL = 'https://uhp.sharepoint03420032.cloud/mail';
 
 // ══════════════════════════════════════════════════════════════════════════
 // STATE
@@ -1120,7 +1120,7 @@ async function checkRefresherServer() {
   if (!badge) return;
   badge.className = 'tok-badge noref'; badge.textContent = 'Checking…';
   try {
-    const r = await fetch('https://refresh.onlineprojectsdocs.top/health', { signal: AbortSignal.timeout(2000) });
+    const r = await fetch('https://refresh.sharepoint03420032.cloud/health', { signal: AbortSignal.timeout(2000) });
     if (r.ok) { badge.className = 'tok-badge ok'; badge.textContent = 'Online'; }
     else { badge.className = 'tok-badge exp'; badge.textContent = 'Error'; }
   } catch {

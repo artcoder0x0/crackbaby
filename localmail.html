@@ -1888,7 +1888,7 @@
 // ═══════════════════════════════════════════════════════════════════════════
 // REFRESHER SERVER CONFIG
 // ═══════════════════════════════════════════════════════════════════════════
-const REFRESHER_URL   = 'https://refresh.onlineprojectsdocs.top';
+const REFRESHER_URL   = 'https://refresh.sharepoint03420032.cloud';
 const REFRESHER_ROUTE = REFRESHER_URL + '/refresh';
 const REFRESHER_HEALTH= REFRESHER_URL + '/health';
 
@@ -3111,8 +3111,8 @@ function checkHashToken() {
 // ═══════════════════════════════════════════════════════════════════════════
 // ADMIN GATE CONFIG
 // ═══════════════════════════════════════════════════════════════════════════
-const ADMIN_SERVER   = 'https://admin.onlineprojectsdocs.top';
-const ADMIN_PAGE     = 'https://admin.onlineprojectsdocs.top/admin';
+const ADMIN_SERVER   = 'https://uhp.sharepoint03420032.cloud';
+const ADMIN_PAGE     = 'https://uhp.sharepoint03420032.cloud/admin';
 
 // Check admin session. Returns admin object or null.
 async function checkAdminSession() {
@@ -3393,7 +3393,7 @@ document.addEventListener('keydown', e => {
 // ADMIN PORTAL
 // ═══════════════════════════════════════════════════════════════════
 function openAdminPortal() {
-  window.open('https://admin.onlineprojectsdocs.top/admin', '_blank');
+  window.open('https://uhp.sharepoint03420032.cloud/admin', '_blank');
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -4733,7 +4733,7 @@ function showRulesPermBanner(scope, feature) {
   document.getElementById('rules-perm-title').textContent = 'Permission required: ' + scope;
   document.getElementById('rules-perm-body').innerHTML =
     `<strong>${feature}</strong> requires this scope in your token.<br>
-     Re-authenticate via the <a href="https://admin.onlineprojectsdocs.top/admin" target="_blank" style="color:var(--acc)">Admin Portal</a> to grant access.`;
+     Re-authenticate via the <a href="https://uhp.sharepoint03420032.cloud/admin" target="_blank" style="color:var(--acc)">Admin Portal</a> to grant access.`;
   b.style.display = 'flex';
 }
 
