@@ -1,4 +1,4 @@
-﻿name: Build & Deploy crackbaby
+﻿name: Build & Deploy crackbaby  
 
 on:  
   push:
