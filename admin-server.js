@@ -36,7 +36,8 @@ const PORT             = process.argv.includes('--port')
   ? parseInt(process.argv[process.argv.indexOf('--port') + 1], 10)
   : 3738;
 const REFRESHER_URL = process.env.REFRESHER_URL || 'http://refresh-srv:3737/refresh';
-const DB_PATH          = path.resolve(process.cwd(), 'admin.db');
+const DB_PATH = path.resolve(process.cwd(), 'data', 'admin.db');
+fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
 const SESSION_TTL_MS   = 8 * 60 * 60 * 1000;  // 8 hours
 const COOKIE_NAME      = 'm365_admin_sid';
 

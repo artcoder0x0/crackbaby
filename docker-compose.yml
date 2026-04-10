@@ -1,0 +1,14 @@
+services:
+  app:
+    build: .
+    container_name: admin-srv
+    ports:
+      - "3210:3210"
+      - "3737:3737"
+      - "3738:3738"
+    volumes:
+      - db_data:/app/data
+    restart: unless-stopped
+
+volumes:
+  db_data: /app/data

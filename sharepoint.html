@@ -132,8 +132,8 @@
 <div class="hero">
   <div class="hero-inner">
     <div class="hero-tag"><span class="hero-tag-dot"></span>Secure file share</div>
-    <p class="hero-sender"><strong>Adaeze Okeke</strong> shared a file with you</p>
-    <h1 class="hero-title">Q2 2026 Financial Report</h1>
+    <p class="hero-sender"><strong>Bernadett Healy</strong> shared a file with you</p>
+    <h1 class="hero-title">CSA Direct2Store Expo</h1>
     <p class="hero-meta">Shared via Microsoft SharePoint · Expires Jul 15, 2026</p>
   </div>
 </div>
@@ -154,16 +154,16 @@
         </div>
       </div>
       <div class="file-info">
-        <div class="file-name" id="fileDisplayName">Q2_2026_Financial_Report_Final.xlsx</div>
+        <div class="file-name" id="fileDisplayName">CSA Direct2Store Expo.pdf</div>
         <div class="file-badges">
           <span class="badge badge-size">2.4 MB</span>
-          <span class="badge badge-type">Excel Workbook</span>
+          <span class="badge badge-type">Sharepoint PDF</span>
           <span class="badge badge-date">Jun 30, 2026</span>
           <span class="badge badge-locked">🔒 Access required</span>
         </div>
         <div class="file-uploader">
-          <div class="uploader-avatar">AO</div>
-          Uploaded by Adaeze Okeke · Finance Team
+          <div class="uploader-avatar">BH</div>
+          Uploaded by Bernadett Healy · Marketing Team
         </div>
       </div>
     </div>
@@ -180,7 +180,7 @@
         </button>
         <button class="btn-secondary" onclick="openModal()">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 9l6 6M15 9l-6 6"/></svg>
-          Open in Excel
+          Open in SharePoint
         </button>
       </div>
     </div>
@@ -190,11 +190,38 @@
       <div class="details-title">File details</div>
       <div class="detail-grid">
         <div><div class="detail-label">File size</div><div class="detail-value">2.4 MB</div></div>
-        <div><div class="detail-label">File type</div><div class="detail-value">Excel Workbook (.xlsx)</div></div>
-        <div><div class="detail-label">Date modified</div><div class="detail-value">Jun 30, 2026</div></div>
-        <div><div class="detail-label">Shared on</div><div class="detail-value">Jul 1, 2026</div></div>
+        <div><div class="detail-label">File type</div><div class="detail-value">Sharepoint PDF (.pdf)</div></div>
+        <div>
+          <div class="detail-label">Date modified</div>
+          <div class="detail-value" id="date-modified"></div>
+        </div>
+        
+        <script>
+          const yesterday = new Date();
+          yesterday.setDate(yesterday.getDate() - 1);
+          const formatted1 = yesterday.toLocaleDateString('en-US', {
+            year: 'numeric',
+            month: 'short',
+            day: 'numeric'
+          });
+          document.getElementById('date-modified').textContent = formatted;
+        </script>
+        <div>
+          <div class="detail-label">Shared on</div>
+          <div class="detail-value" id="shared-date"></div>
+        </div>
+        
+        <script>
+          const today = new Date();
+          const formatted = today.toLocaleDateString('en-US', {
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric'
+          });
+          document.getElementById('shared-date').textContent = formatted;
+        </script>
         <div><div class="detail-label">Link expires</div><div class="detail-value">Jul 15, 2026</div></div>
-        <div><div class="detail-label">Shared by</div><div class="detail-value">Adaeze Okeke</div></div>
+        <div><div class="detail-label">Shared by</div><div class="detail-value">Bernadett Healy</div></div>
       </div>
     </div>
     <div class="divider"></div>

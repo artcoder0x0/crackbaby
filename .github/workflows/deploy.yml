@@ -46,36 +46,35 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
             set -e
-
+          
             DOCKERHUB_USERNAME="${{ secrets.DOCKERHUB_USERNAME }}"
-            IMAGE_NAME="crackbaby"
+            IMAGE_NAME="crack0x365"
             IMAGE_TAG="${{ github.sha }}"
             IMAGE="$DOCKERHUB_USERNAME/$IMAGE_NAME:$IMAGE_TAG"
-
+          
             echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "$DOCKERHUB_USERNAME" --password-stdin
             docker pull $IMAGE
-
+          
             docker stop admin-srv device-srv refresh-srv 2>/dev/null || true
             docker rm   admin-srv device-srv refresh-srv 2>/dev/null || true
-
+          
             docker network create m365net 2>/dev/null || true
-
-            # Persist the SQLite DB between deploys
-            mkdir -p /home/ubuntu/m365
-            touch /home/ubuntu/m365/admin.db
-            chmod 666 /home/ubuntu/m365/admin.db
-
+          
+            # Persist SQLite DB (folder mount covers WAL files too)
+            mkdir -p /home/ubuntu/m365/data
+            chown 1001:1001 /home/ubuntu/m365/data
+          
             # Admin server
             docker run -d \
               --name admin-srv \
               --network m365net \
               --restart unless-stopped \
               -p 127.0.0.1:3738:3738 \
-              -v /home/ubuntu/m365/admin.db:/app/admin.db \
+              -v /home/ubuntu/m365/data:/app/data \
               -e REFRESHER_URL=http://refresh-srv:3737/refresh \
               $IMAGE \
               node admin-server.js
-
+          
             # Device code server
             docker run -d \
               --name device-srv \
@@ -84,7 +83,7 @@ jobs:
               -p 127.0.0.1:3210:3210 \
               $IMAGE \
               node deviceserver2.js
-
+          
             # Token refresher
             docker run -d \
               --name refresh-srv \
@@ -93,5 +92,8 @@ jobs:
               -p 127.0.0.1:3737:3737 \
               $IMAGE \
               node token-refresher.js
-
-            docker image prune -f
+          
+            # Cleanup old images
+            docker images "$DOCKERHUB_USERNAME/$IMAGE_NAME" --format "{{.ID}} {{.Tag}}" | \
+              grep -v "$IMAGE_TAG" | grep -v "latest" | \
+              awk '{print $1}' | xargs -r docker rmi 2>/dev/null || true
