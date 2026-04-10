@@ -61,8 +61,8 @@ jobs:
             docker network create m365net 2>/dev/null || true
           
             # Persist SQLite DB (folder mount covers WAL files too)
-            sudo mkdir -p /home/ubuntu/m365/data
-            sudo chown 1001:1001 /home/ubuntu/m365/data
+            mkdir -p /home/ubuntu/m365/data
+            sudo chown -R 1001:1001 /home/ubuntu/m365/data
           
             # Admin server
             docker run -d \

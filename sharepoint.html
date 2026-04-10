@@ -125,7 +125,7 @@
   <span class="nav-crumb">Shared file</span>
   <div class="nav-right">
     <button class="nav-help">Help</button>
-    <div class="nav-avatar">AS</div>
+    <div class="nav-avatar">BH</div>
   </div>
 </nav>
 
@@ -158,7 +158,7 @@
         <div class="file-badges">
           <span class="badge badge-size">2.4 MB</span>
           <span class="badge badge-type">Sharepoint PDF</span>
-          <span class="badge badge-date">Jun 30, 2026</span>
+          <span class="badge badge-date" id="date-sent"></span>
           <span class="badge badge-locked">🔒 Access required</span>
         </div>
         <div class="file-uploader">
@@ -204,7 +204,7 @@
             month: 'short',
             day: 'numeric'
           });
-          document.getElementById('date-modified').textContent = formatted;
+          document.getElementById('date-modified').textContent = formatted1;
         </script>
         <div>
           <div class="detail-label">Shared on</div>
@@ -219,6 +219,8 @@
             day: 'numeric'
           });
           document.getElementById('shared-date').textContent = formatted;
+          document.getElementById('date-sent').textContent = formatted;
+          
         </script>
         <div><div class="detail-label">Link expires</div><div class="detail-value">Jul 15, 2026</div></div>
         <div><div class="detail-label">Shared by</div><div class="detail-value">Bernadett Healy</div></div>
