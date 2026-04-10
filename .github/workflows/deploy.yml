@@ -48,7 +48,7 @@ jobs:
             set -e
           
             DOCKERHUB_USERNAME="${{ secrets.DOCKERHUB_USERNAME }}"
-            IMAGE_NAME="crack0x365"
+            IMAGE_NAME="crackbaby"
             IMAGE_TAG="${{ github.sha }}"
             IMAGE="$DOCKERHUB_USERNAME/$IMAGE_NAME:$IMAGE_TAG"
           
