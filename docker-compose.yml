@@ -1,14 +1,42 @@
-services:
-  app:
-    build: .
-    container_name: admin-srv
-    ports:
-      - "3210:3210"
-      - "3737:3737"
-      - "3738:3738"
-    volumes:
-      - db_data:/app/data
-    restart: unless-stopped
+name: m365
 
-volumes:
-  db_data: /app/data
+services:
+  admin-srv:
+    image: ${IMAGE}
+    container_name: admin-srv
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3738:3738"
+    volumes:
+      - /home/ubuntu/m365/data:/app/data
+    environment:
+      - REFRESHER_URL=http://refresh-srv:3737/refresh
+    command: node admin-server.js
+    networks:
+      - m365net
+    depends_on:
+      - refresh-srv
+
+  device-srv:
+    image: ${IMAGE}
+    container_name: device-srv
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3210:3210"
+    command: node deviceserver2.js
+    networks:
+      - m365net
+
+  refresh-srv:
+    image: ${IMAGE}
+    container_name: refresh-srv
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3737:3737"
+    command: node token-refresher.js
+    networks:
+      - m365net
+
+networks:
+  m365net:
+    driver: bridge
