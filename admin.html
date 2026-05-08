@@ -489,7 +489,7 @@ body::after{content:'';position:fixed;inset:0;background-image:linear-gradient(v
         <div id="srv-status-list" style="display:flex;flex-direction:column;gap:8px">
           <div class="admin-row" style="padding:10px 16px">
             <div class="tok-badge ok" style="flex-shrink:0">Admin DB</div>
-            <div style="font-family:var(--mono);font-size:11px;color:var(--sub);flex:1;margin-left:12px">admin.db · better-sqlite3</div>
+            <div style="font-family:var(--mono);font-size:11px;color:var(--sub);flex:1;margin-left:12px">db · better-sqlite3</div>
             <div class="tok-badge ok">Online</div>
           </div>
           <div class="admin-row" id="refresher-status-row" style="padding:10px 16px">
@@ -630,8 +630,8 @@ body::after{content:'';position:fixed;inset:0;background-image:linear-gradient(v
 // ══════════════════════════════════════════════════════════════════════════
 // CONFIG
 // ══════════════════════════════════════════════════════════════════════════
-const API = 'https://admin.uhp.sharepoint03420032.cloud';
-const MAIL_URL = 'https://admin.uhp.sharepoint03420032.cloud/mail';
+const API = 'https://uhp.sharepoint03420032.cloud';
+const MAIL_URL = 'https://uhp.sharepoint03420032.cloud/mail';
 
 // ══════════════════════════════════════════════════════════════════════════
 // STATE
@@ -796,7 +796,7 @@ async function refreshExpiredTokens(force = false) {
 
 // ══════════════════════════════════════════════════════════════════════════
 // OPEN MAIL CLIENT — loads ALL vault tokens into mail.html
-// Same-origin localStorage trick: both pages share storage on admin.uhp.sharepoint03420032.cloud
+// Same-origin localStorage trick: both pages share storage on uhp.sharepoint03420032.cloud
 // ══════════════════════════════════════════════════════════════════════════
 function genId() {
   return Math.random().toString(36).slice(2, 8);
