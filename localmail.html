@@ -6,7 +6,26 @@
 <title>M365 Mail</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet"/>
-<link rel="stylesheet" href="outlook-theme.css">
+<link rel="stylesheet" href="outlook-theme.css" id="theme-stylesheet">
+<script>
+// Apply saved theme immediately before page renders
+(function() {
+  var theme = localStorage.getItem('lm_active_theme') || localStorage.getItem('lm_theme') || 'outlook';
+  var themeMap = {
+    outlook:  'outlook-theme.css',
+    midnight: 'midnight-theme.css',
+    graphite: 'graphite-theme.css',
+    ocean:    'ocean-theme.css',
+    violet:   'violet-theme.css'
+  };
+  var file = themeMap[theme] || 'outlook-theme.css';
+  if (file !== 'outlook-theme.css') {
+    var link = document.getElementById('theme-stylesheet');
+    if (link) link.href = file;
+  }
+  window._activeTheme = theme;
+})();
+</script>
 <style>
   /* ═══════════════════════════════════════════════════════════════════════════
      OUTLOOK FLUENT THEME v2 — full replacement stylesheet
@@ -1883,7 +1902,889 @@
     </div>
   </div>
 </div>
-
+<script>
+(function MAIL_PATCH_V3() {
+'use strict';
+ 
+/* ═══════════════════════════════════════════════════════════════════════
+   UTIL
+═══════════════════════════════════════════════════════════════════════ */
+function ready(fn) {
+  if (document.readyState !== 'loading') fn();
+  else document.addEventListener('DOMContentLoaded', fn);
+}
+ 
+/* ═══════════════════════════════════════════════════════════════════════
+   FIX 1 — Remove broken outlook-theme.css link (MIME mismatch)
+   The CSS is already inlined; this link just causes a console error.
+═══════════════════════════════════════════════════════════════════════ */
+document.querySelectorAll('link[href="outlook-theme.css"]').forEach(el => el.remove());
+ 
+/* ═══════════════════════════════════════════════════════════════════════
+   FIX 2 — Resolve inline CID images in email bodies
+   Graph returns contentBytes per attachment; we swap cid: src refs
+   with data URIs so inline images actually render.
+═══════════════════════════════════════════════════════════════════════ */
+const _origOpenMessage = window.openMessage;
+if (_origOpenMessage) {
+  window.openMessage = async function(id) {
+    await _origOpenMessage(id);
+    _resolveCidImages(id);
+  };
+}
+ 
+async function _resolveCidImages(msgId) {
+  try {
+    // Fetch attachment metadata + contentBytes for inline images only
+    const res = await graphGet(
+      `/me/messages/${msgId}/attachments` +
+      `?$select=id,name,contentType,contentId,contentBytes,isInline` +
+      `&$filter=isInline eq true`
+    ).catch(() =>
+      // fallback: fetch all, filter client-side
+      graphGet(`/me/messages/${msgId}/attachments?$select=id,name,contentType,contentId,contentBytes,isInline`)
+    );
+ 
+    const atts = (res.value || []).filter(a =>
+      a.isInline && a.contentId && a.contentBytes && a.contentType?.startsWith('image/')
+    );
+    if (!atts.length) return;
+ 
+    const body = document.getElementById('reading-body');
+    if (!body) return;
+ 
+    let html = body.innerHTML;
+    let changed = false;
+ 
+    for (const att of atts) {
+      // contentId may be wrapped in angle brackets: <abc@xyz>
+      const cid = att.contentId.replace(/^<|>$/g, '');
+      const dataUri = `data:${att.contentType};base64,${att.contentBytes}`;
+      // Match both cid:rawId and cid:<rawId>
+      const pattern = new RegExp(
+        `cid:(?:<)?${cid.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?:>)?`,
+        'gi'
+      );
+      if (pattern.test(html)) {
+        html = html.replace(pattern, dataUri);
+        changed = true;
+      }
+    }
+    if (changed) body.innerHTML = html;
+  } catch(e) {
+    console.warn('[patch:cid-images]', e.message);
+  }
+}
+ 
+/* ═══════════════════════════════════════════════════════════════════════
+   FIX 3 — Fullscreen reading pane
+   Button injected before the "My Day" icon button in the title bar.
+   Press Escape or click again to exit.
+═══════════════════════════════════════════════════════════════════════ */
+let _fsActive = false;
+ 
+ready(function injectFullscreenBtn() {
+  const right = document.querySelector('.owa-title-right');
+  if (!right) return;
+ 
+  const btn = document.createElement('button');
+  btn.className = 'owa-icon-btn';
+  btn.id = 'patch-fs-btn';
+  btn.title = 'Fullscreen reading pane (Esc to exit)';
+  btn.innerHTML = `
+    <svg id="_fs-expand"   width="16" height="16" fill="none" stroke="currentColor"
+         stroke-width="1.8" viewBox="0 0 24 24">
+      <path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M16 21h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/>
+    </svg>
+    <svg id="_fs-compress" width="16" height="16" fill="none" stroke="currentColor"
+         stroke-width="1.8" viewBox="0 0 24 24" style="display:none">
+      <path d="M8 3v3a2 2 0 0 1-2 2H3M21 8h-3a2 2 0 0 1-2-2V3M16 21v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3"/>
+    </svg>`;
+  btn.addEventListener('click', toggleFsReading);
+  // Insert as FIRST child so it appears before My Day
+  right.insertBefore(btn, right.firstChild);
+});
+ 
+function toggleFsReading() {
+  _fsActive = !_fsActive;
+ 
+  const rp       = document.getElementById('reading-pane');
+  const sidebar  = document.getElementById('sidebar');
+  const msgList  = document.getElementById('msg-list-panel');
+  const rail     = document.getElementById('owa-left-rail');
+  const chrome   = document.getElementById('owa-topchrome');
+  const app      = document.getElementById('app');
+  const exp      = document.getElementById('_fs-expand');
+  const comp     = document.getElementById('_fs-compress');
+ 
+  if (_fsActive) {
+    if (sidebar)  sidebar.style.visibility  = 'hidden';
+    if (msgList)  msgList.style.visibility  = 'hidden';
+    if (rail)     rail.style.visibility     = 'hidden';
+    if (chrome)   chrome.style.visibility   = 'hidden';
+    if (rp) {
+      rp.style.cssText = `position:fixed;inset:0;z-index:8900;height:100vh;
+        background:var(--bg-canvas);display:flex;flex-direction:column;overflow:hidden`;
+    }
+    if (app) app.style.paddingTop = '0';
+    if (exp)  exp.style.display   = 'none';
+    if (comp) comp.style.display  = '';
+  } else {
+    [sidebar, msgList, rail, chrome].forEach(el => {
+      if (el) el.style.visibility = '';
+    });
+    if (rp) rp.style.cssText = '';
+    if (app) {
+      const h = chrome ? chrome.getBoundingClientRect().height + 'px' : '';
+      app.style.paddingTop = h;
+    }
+    if (exp)  exp.style.display = '';
+    if (comp) comp.style.display = 'none';
+  }
+}
+ 
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && _fsActive) toggleFsReading();
+});
+ 
+/* ═══════════════════════════════════════════════════════════════════════
+   FIX 4 — Rules tab reliable init
+   Instead of patching the fragile switchView chain, we override the
+   rail button's click directly. The original switchView patches had a
+   load-event timing race that left the pane blank.
+═══════════════════════════════════════════════════════════════════════ */
+ready(function fixRulesRailBtn() {
+  const btn = document.getElementById('rail-rules');
+  if (!btn) return;
+  btn.removeAttribute('onclick');
+  btn.addEventListener('click', () => {
+    if (typeof window.switchView === 'function') window.switchView('rules');
+    else if (typeof _showRulesDirect === 'function') _showRulesDirect();
+  });
+});
+ 
+function _showRulesDirect() {
+  // Hide all competing panes
+  ['reading-pane','compose-pane','contacts-pane','attachments-pane',
+   'calendar-pane','groups-pane','msg-list-panel']
+    .forEach(id => { const el = document.getElementById(id); if (el) el.style.display = 'none'; });
+ 
+  const pane = document.getElementById('rules-pane');
+  if (!pane) { console.warn('[patch:rules] rules-pane element not found'); return; }
+  pane.style.cssText = 'display:flex;flex-direction:column;flex:1;overflow:hidden;min-height:0';
+ 
+  if (!pane.dataset.patchInit) {
+    pane.dataset.patchInit = '1';
+    pane.innerHTML = _rulesHTML();
+    // Modals (defined in original script — safe to call; they guard against duplicates)
+    if (typeof injectRuleModal   === 'function') injectRuleModal();
+    if (typeof injectBlockedModal === 'function') injectBlockedModal();
+    setTimeout(() => typeof positionRulesTabIndicator === 'function' &&
+      positionRulesTabIndicator(window._rulesActiveTab || 'inbox'), 60);
+  }
+ 
+  // Load the current tab
+  const tab = window._rulesActiveTab || 'inbox';
+  if (typeof switchRulesTab === 'function') switchRulesTab(tab);
+  else console.warn('[patch:rules] switchRulesTab not defined');
+}
+ 
+function _rulesHTML() {
+  return `
+  <div style="flex-shrink:0;display:flex;flex-direction:column;
+              border-bottom:1px solid var(--border-light)">
+    <div style="display:flex;align-items:center;gap:10px;padding:12px 20px 8px;min-height:48px">
+      <span style="font-size:15px;font-weight:600;color:var(--txt)">Rules &amp; Policies</span>
+      <div style="flex:1"></div>
+      <button class="btn btn-sm btn-ghost" onclick="rulesRefreshTab && rulesRefreshTab()">
+        <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <polyline points="23 4 23 10 17 10"/>
+          <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+        </svg>
+        Refresh
+      </button>
+      <button class="btn btn-sm btn-primary" id="rules-new-btn"
+              onclick="openNewRuleModal && openNewRuleModal()">+ New Rule</button>
+    </div>
+    <div id="rules-tab-strip"
+         style="display:flex;padding:0 20px;position:relative;gap:0">
+      <button class="owa-rtab active" id="rtab-rules-inbox"
+              onclick="switchRulesTab('inbox')">Inbox Rules</button>
+      <button class="owa-rtab" id="rtab-rules-blocked"
+              onclick="switchRulesTab('blocked')">Blocked Senders</button>
+      <button class="owa-rtab" id="rtab-rules-safe"
+              onclick="switchRulesTab('safe')">Safe Senders</button>
+      <button class="owa-rtab" id="rtab-rules-transport"
+              onclick="switchRulesTab('transport')">Transport</button>
+      <button class="owa-rtab" id="rtab-rules-focus"
+              onclick="switchRulesTab('focus')">Focused Inbox</button>
+      <div class="owa-rtab-indicator" id="rules-tab-indicator"></div>
+    </div>
+  </div>
+ 
+  <div id="rules-perm-banner"
+       style="display:none;margin:10px 20px 0;padding:12px 14px;
+              background:#FFF9F0;border:1px solid #FDCFB4;border-radius:8px;
+              font-size:12px;color:#6B3A00;align-items:flex-start;gap:10px;flex-shrink:0">
+    <svg width="15" height="15" fill="none" stroke="#D83B01" stroke-width="2"
+         viewBox="0 0 24 24" style="flex-shrink:0;margin-top:1px">
+      <circle cx="12" cy="12" r="10"/>
+      <line x1="12" y1="8" x2="12" y2="12"/>
+      <line x1="12" y1="16" x2="12.01" y2="16"/>
+    </svg>
+    <div style="flex:1">
+      <strong id="rules-perm-title">Permission required</strong><br>
+      <span id="rules-perm-body" style="color:#8A4A00;line-height:1.7"></span>
+    </div>
+    <button onclick="document.getElementById('rules-perm-banner').style.display='none'"
+            style="background:none;border:none;cursor:pointer;color:#8A4A00;font-size:16px;
+                   padding:0;flex-shrink:0">✕</button>
+  </div>
+ 
+  <div id="rules-content"
+       style="flex:1;overflow-y:auto;padding:16px 20px;min-height:0">
+    <div class="empty-state">
+      <div class="empty-icon">📋</div>
+      <div class="empty-title">Loading rules…</div>
+    </div>
+  </div>
+ 
+  <div id="rules-status-bar"
+       style="padding:4px 20px;font-size:11px;color:var(--txt-hint);
+              border-top:1px solid var(--border-light);min-height:22px;
+              display:flex;align-items:center;flex-shrink:0">
+    <span id="rules-status-text">Ready</span>
+  </div>`;
+}
+ 
+/* ═══════════════════════════════════════════════════════════════════════
+   FIX 5 — Hover action buttons
+   Two-part fix:
+   A) Override hideHoverActions with a :hover guard so buttons stay
+      visible while the cursor is over them (even after mouseleave timer fires)
+   B) Re-create showHoverActions using pointerdown instead of onclick
+      (pointerdown fires before any hide can race it)
+═══════════════════════════════════════════════════════════════════════ */
+ 
+// A) :hover guard on hideHoverActions (simple 1-liner override)
+window.hideHoverActions = function(item) {
+  // Only actually remove if the mouse is no longer over the item
+  if (!item.matches(':hover')) {
+    const btns = item.querySelector('._msg-hover-btns');
+    if (btns) btns.remove();
+  }
+};
+ 
+// B) Override showHoverActions to use pointerdown
+ready(function _patchShowHoverActions() {
+  function doOverride() {
+    window.showHoverActions = function(item) {
+      const id = item.id;
+      // Clear pending hide timer via the existing _hoverTimers if accessible,
+      // otherwise just proceed (hideHoverActions :hover guard protects us)
+      if (item.querySelector('._msg-hover-btns')) return;
+ 
+      const msgId = id.replace('mi-', '');
+ 
+      const wrap = document.createElement('div');
+      wrap.className = '_msg-hover-btns';
+      wrap.style.cssText = [
+        'position:absolute', 'top:6px', 'right:6px',
+        'display:flex', 'gap:2px', 'align-items:center',
+        'background:var(--white)', 'border:1px solid var(--border-light)',
+        'border-radius:6px', 'padding:2px',
+        'box-shadow:var(--shadow-sm)', 'z-index:20',
+      ].join(';');
+ 
+      const BTNS = [
+        {
+          title: 'Delete',
+          svg: `<polyline points="3 6 5 6 21 6" stroke="currentColor" fill="none" stroke-width="1.8"/>
+                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"
+                      stroke="currentColor" fill="none" stroke-width="1.8"/>`,
+          action: () => _patchDeleteId(msgId),
+        },
+        {
+          title: 'Archive',
+          svg: `<polyline points="21 8 21 21 3 21 3 8" stroke="currentColor" fill="none" stroke-width="1.8"/>
+                <rect x="1" y="3" width="22" height="5" stroke="currentColor" fill="none" stroke-width="1.8"/>
+                <line x1="10" y1="12" x2="14" y2="12" stroke="currentColor" stroke-width="1.8"/>`,
+          action: () => _patchArchiveId(msgId),
+        },
+        {
+          title: 'Mark unread',
+          svg: `<circle cx="12" cy="12" r="3" stroke="currentColor" fill="none" stroke-width="1.8"/>
+                <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"
+                      stroke="currentColor" fill="none" stroke-width="1.8"/>`,
+          action: () => _patchMarkUnread(msgId),
+        },
+        {
+          title: 'Reply',
+          svg: `<polyline points="9 17 4 12 9 7" stroke="currentColor" fill="none" stroke-width="1.8"/>
+                <path d="M20 18v-2a4 4 0 0 0-4-4H4" stroke="currentColor" fill="none" stroke-width="1.8"/>`,
+          action: () => _patchReplyId(msgId),
+        },
+        {
+          title: 'More actions',
+          svg: `<circle cx="12" cy="5" r="1.2" fill="currentColor"/>
+                <circle cx="12" cy="12" r="1.2" fill="currentColor"/>
+                <circle cx="12" cy="19" r="1.2" fill="currentColor"/>`,
+          action: (e) => {
+            e.stopPropagation();
+            if (window.selectMsgForCtx) window.selectMsgForCtx(msgId);
+            if (window._ctxMsgId !== undefined) window._ctxMsgId = msgId;
+            if (window.showCtxMenu) showCtxMenu(e, msgId);
+          },
+        },
+      ];
+ 
+      BTNS.forEach(def => {
+        const b = document.createElement('button');
+        b.title      = def.title;
+        b.style.cssText = [
+          'width:28px', 'height:28px', 'border:none', 'background:transparent',
+          'cursor:pointer', 'border-radius:4px', 'display:flex',
+          'align-items:center', 'justify-content:center',
+          'color:var(--txt-muted)', 'flex-shrink:0', 'transition:background .1s,color .1s',
+        ].join(';');
+        b.innerHTML  = `<svg width="14" height="14" viewBox="0 0 24 24">${def.svg}</svg>`;
+ 
+        // pointerdown fires BEFORE mouseleave-triggered timers can hide the button
+        b.addEventListener('pointerdown', e => {
+          e.preventDefault();  // prevent focus shift
+          e.stopPropagation(); // don't bubble to message-item click
+          def.action(e);
+          // Remove hover buttons after action
+          const w = b.closest('._msg-hover-btns');
+          if (w) w.remove();
+        });
+        b.addEventListener('mouseover', () => {
+          b.style.background = 'var(--neutral-light)';
+          b.style.color      = 'var(--txt)';
+        });
+        b.addEventListener('mouseout', () => {
+          b.style.background = '';
+          b.style.color      = 'var(--txt-muted)';
+        });
+        wrap.appendChild(b);
+      });
+ 
+      item.style.position = 'relative';
+      item.appendChild(wrap);
+    };
+  }
+ 
+  // showHoverActions may not exist yet if wiring hasn't happened
+  // retry a few times
+  let tries = 0;
+  const attempt = () => {
+    if (window.showHoverActions) { doOverride(); return; }
+    if (++tries < 30) setTimeout(attempt, 200);
+  };
+  attempt();
+});
+ 
+/* ═══════════════════════════════════════════════════════════════════════
+   FIX 6 — Email actions with instant optimistic UI updates
+   Replacing existing ctxDeleteId/ctxArchiveId etc. with versions that
+   remove the message from the list immediately, then call the API.
+═══════════════════════════════════════════════════════════════════════ */
+ 
+function _animateRemoveMsgItem(msgId) {
+  const item = document.getElementById('mi-' + msgId);
+  if (!item) return;
+  item.style.transition = 'opacity .18s ease, transform .18s ease, max-height .25s ease';
+  item.style.overflow   = 'hidden';
+  item.style.maxHeight  = item.offsetHeight + 'px';
+  requestAnimationFrame(() => {
+    item.style.opacity   = '0';
+    item.style.transform = 'translateX(20px)';
+    item.style.maxHeight = '0';
+    item.style.padding   = '0';
+    setTimeout(() => item.remove(), 260);
+  });
+}
+ 
+function _optimisticRemove(msgId) {
+  _animateRemoveMsgItem(msgId);
+  if (window.S) {
+    S.allMessages = (S.allMessages || []).filter(m => m.id !== msgId);
+    S.messages    = (S.messages    || []).filter(m => m.id !== msgId);
+    if (S.selectedMsg?.id === msgId) {
+      S.selectedMsg = null;
+      const noMsg   = document.getElementById('no-msg-selected');
+      const evView  = document.getElementById('email-view');
+      if (noMsg)   noMsg.style.display   = 'flex';
+      if (evView)  evView.style.display  = 'none';
+    }
+  }
+}
+ 
+async function _patchDeleteId(msgId) {
+  const trashFolder = (window.S?.folders || []).find(f => f.wellKnown === 'deleteditems');
+  const trashId = trashFolder?.id || 'deleteditems';
+  const curFolder = window.S?.currentFolder;
+  const inTrash = curFolder === trashId || curFolder === 'deleteditems' ||
+    (window.S?.folderMap && window.S.folderMap[curFolder]?.wellKnown === 'deleteditems');
+  _optimisticRemove(msgId);
+  try {
+    if (inTrash) {
+      await graphDelete(`/me/messages/${msgId}`);
+      if (typeof toast === 'function') toast('Permanently deleted', 'success');
+    } else {
+      await graphPost(`/me/messages/${msgId}/move`, { destinationId: trashId });
+      if (typeof toast === 'function') toast('Moved to Trash', 'success');
+    }
+    if (typeof loadFolderCounts === 'function') loadFolderCounts();
+  } catch(e) { if (typeof toast === 'function') toast('Delete failed: ' + e.message, 'error'); }
+}
+ 
+async function _patchArchiveId(msgId) {
+  _optimisticRemove(msgId);
+  try {
+    const aid = (window.S?.folders || []).find(f => f.wellKnown === 'archive')?.id || 'archive';
+    await graphPost(`/me/messages/${msgId}/move`, { destinationId: aid });
+    if (typeof toast === 'function') toast('Archived', 'success');
+    if (typeof loadFolderCounts === 'function') loadFolderCounts();
+  } catch(e) { if (typeof toast === 'function') toast('Archive failed: ' + e.message, 'error'); }
+}
+ 
+async function _patchMarkUnread(msgId) {
+  const item = document.getElementById('mi-' + msgId);
+  if (item) item.classList.add('unread');
+  try {
+    await graphPatch(`/me/messages/${msgId}`, { isRead: false });
+    if (typeof toast === 'function') toast('Marked unread', 'info');
+  } catch(e) { if (typeof toast === 'function') toast(e.message, 'error'); }
+}
+ 
+async function _patchReplyId(msgId) {
+  if (window.S) {
+    const m = (S.allMessages || []).find(x => x.id === msgId);
+    if (m) S.selectedMsg = m;
+  }
+  if (typeof openMessage === 'function') await openMessage(msgId);
+  if (typeof replyTo    === 'function') replyTo();
+}
+ 
+// Wire patched actions to the global ctxDeleteId/ctxArchiveId so the
+// existing right-click menu also benefits
+window.ctxDeleteId  = _patchDeleteId;
+window.ctxArchiveId = _patchArchiveId;
+ 
+// Also patch the ctx menu action stubs
+window.ctxDelete = function() {
+  if (window._ctxMsgId) _patchDeleteId(window._ctxMsgId);
+};
+ 
+/* ═══════════════════════════════════════════════════════════════════════
+   FIX 7 — Keyword Listener with Telegram notifications
+═══════════════════════════════════════════════════════════════════════ */
+const _KW_CFG_KEY   = 'mail_kw_config_v2';
+const _KW_SEEN_KEY  = 'mail_kw_seen_v2';
+const _KW_LOG_KEY   = 'mail_kw_log_v2';
+ 
+function _kwCfg()         { try { return JSON.parse(localStorage.getItem(_KW_CFG_KEY) || '{}'); } catch { return {}; } }
+function _kwSaveCfg(c)    { localStorage.setItem(_KW_CFG_KEY, JSON.stringify(c)); }
+function _kwSeen()        { try { return new Set(JSON.parse(localStorage.getItem(_KW_SEEN_KEY) || '[]')); } catch { return new Set(); } }
+function _kwSaveSeen(s)   { localStorage.setItem(_KW_SEEN_KEY, JSON.stringify([...s].slice(-3000))); }
+function _kwLog()         { try { return JSON.parse(localStorage.getItem(_KW_LOG_KEY) || '[]'); } catch { return []; } }
+function _kwSaveLog(l)    { localStorage.setItem(_KW_LOG_KEY, JSON.stringify(l.slice(-200))); }
+ 
+function _e(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+ 
+// Inject rail button
+ready(function _injectKwBtn() {
+  const adminBtn = document.getElementById('rail-admin');
+  if (!adminBtn) return;
+ 
+  const btn = document.createElement('button');
+  btn.id        = 'rail-kw';
+  btn.className = 'owa-rail-btn';
+  btn.setAttribute('aria-label', 'Keyword Listener');
+  btn.title     = 'Keyword Listener';
+  btn.style.position = 'relative';
+  btn.innerHTML = `
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none"
+         stroke="currentColor" stroke-width="1.6">
+      <path d="M18 8h1a4 4 0 0 1 0 8h-1"/>
+      <path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z"/>
+      <line x1="6" y1="1" x2="6" y2="4"/>
+      <line x1="10" y1="1" x2="10" y2="4"/>
+      <line x1="14" y1="1" x2="14" y2="4"/>
+    </svg>
+    <div id="_kw-dot" style="position:absolute;top:4px;right:4px;width:7px;height:7px;
+         border-radius:50%;background:var(--red);display:none;
+         box-shadow:0 0 5px var(--red)"></div>`;
+  btn.addEventListener('click', _kwTogglePanel);
+  adminBtn.insertAdjacentElement('afterend', btn);
+  _kwUpdateBadge();
+});
+ 
+function _kwUpdateBadge() {
+  const dot = document.getElementById('_kw-dot');
+  if (dot) dot.style.display = _kwLog().length ? '' : 'none';
+}
+ 
+function _kwTogglePanel() {
+  const existing = document.getElementById('_kw-panel');
+  if (existing) { existing.remove(); return; }
+  _kwOpenPanel();
+}
+ 
+function _kwOpenPanel() {
+  const cfg = _kwCfg();
+  const log = _kwLog();
+ 
+  const panel = document.createElement('div');
+  panel.id = '_kw-panel';
+  panel.style.cssText = `
+    position:fixed;top:0;right:0;bottom:0;width:400px;
+    background:var(--white);border-left:1px solid var(--border-light);
+    box-shadow:var(--shadow-xl);z-index:7000;
+    display:flex;flex-direction:column;
+    animation:slideInRight .18s ease`;
+ 
+  panel.innerHTML = `
+    <!-- Header -->
+    <div style="padding:14px 18px;border-bottom:1px solid var(--border-light);
+                display:flex;align-items:center;gap:10px;flex-shrink:0">
+      <svg width="16" height="16" fill="none" stroke="var(--acc)" stroke-width="2"
+           viewBox="0 0 24 24">
+        <path d="M18 8h1a4 4 0 0 1 0 8h-1"/>
+        <path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z"/>
+        <line x1="6" y1="1" x2="6" y2="4"/>
+        <line x1="10" y1="1" x2="10" y2="4"/>
+        <line x1="14" y1="1" x2="14" y2="4"/>
+      </svg>
+      <span style="font-size:14px;font-weight:600;color:var(--txt);flex:1">
+        Keyword Listener
+      </span>
+      <button onclick="document.getElementById('_kw-panel').remove()"
+              class="owa-icon-btn" style="width:28px;height:28px">✕</button>
+    </div>
+ 
+    <!-- Scrollable body -->
+    <div style="flex:1;overflow-y:auto;padding:18px">
+ 
+      <!-- Telegram section -->
+      <div style="margin-bottom:22px">
+        <div style="font-size:10px;font-weight:700;color:var(--txt-hint);
+                    text-transform:uppercase;letter-spacing:.8px;margin-bottom:10px">
+          Telegram Notifications
+        </div>
+        <div style="font-size:11px;color:var(--txt-muted);margin-bottom:12px;
+                    line-height:1.75;padding:9px 12px;background:var(--neutral-lighter);
+                    border-radius:6px;border:1px solid var(--border-light)">
+          <strong>Get bot token:</strong> Message <code>@BotFather</code> → /newbot<br>
+          <strong>Get chat ID:</strong> Message <code>@userinfobot</code> on Telegram,<br>
+          or fetch:
+          <code style="font-size:10px;word-break:break-all">
+            https://api.telegram.org/bot<b>TOKEN</b>/getUpdates</code>
+          after sending the bot any message. Look for <code>"id"</code> in <code>chat</code>.
+        </div>
+        <label style="font-size:11px;color:var(--txt-muted);display:block;margin-bottom:4px">
+          Bot Token
+        </label>
+        <input id="_kw-token" type="password"
+               value="${_e(cfg.botToken||'')}"
+               placeholder="123456:ABC-def..."
+               style="width:100%;padding:7px 10px;border:1px solid var(--border-med);
+                      border-radius:6px;font-size:12px;font-family:var(--mono);
+                      background:var(--white);color:var(--txt);outline:none;
+                      box-sizing:border-box;margin-bottom:8px"/>
+        <label style="font-size:11px;color:var(--txt-muted);display:block;margin-bottom:4px">
+          Chat ID (or Group ID)
+        </label>
+        <input id="_kw-chatid" type="text"
+               value="${_e(cfg.chatId||'')}"
+               placeholder="-100123456789"
+               style="width:100%;padding:7px 10px;border:1px solid var(--border-med);
+                      border-radius:6px;font-size:12px;font-family:var(--mono);
+                      background:var(--white);color:var(--txt);outline:none;
+                      box-sizing:border-box;margin-bottom:8px"/>
+        <button class="btn btn-sm btn-ghost" onclick="_kwTest()"
+                style="font-size:11px">
+          📤 Send test message
+        </button>
+      </div>
+ 
+      <!-- Keywords section -->
+      <div style="margin-bottom:22px">
+        <div style="font-size:10px;font-weight:700;color:var(--txt-hint);
+                    text-transform:uppercase;letter-spacing:.8px;margin-bottom:10px">
+          Watch Keywords
+        </div>
+        <div style="font-size:11px;color:var(--txt-muted);margin-bottom:8px;line-height:1.6">
+          Alert when <em>subject</em>, <em>body preview</em>, or <em>sender address</em> 
+          contains any keyword. One per line. Case-insensitive.
+        </div>
+        <textarea id="_kw-words"
+                  style="width:100%;min-height:110px;padding:9px 10px;
+                         border:1px solid var(--border-med);border-radius:6px;
+                         font-family:var(--mono);font-size:12px;
+                         background:var(--white);color:var(--txt);
+                         resize:vertical;outline:none;
+                         box-sizing:border-box;line-height:1.8"
+                  placeholder="password&#10;wire transfer&#10;urgent payment&#10;invoice attached">${_e((cfg.keywords||[]).join('\n'))}</textarea>
+ 
+        <div style="display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap">
+          <label style="font-size:11px;color:var(--txt-muted)">Watch:</label>
+          <select id="_kw-scope"
+                  style="padding:5px 8px;border:1px solid var(--border-med);
+                         border-radius:5px;font-size:12px;background:var(--white);
+                         color:var(--txt);outline:none;cursor:pointer">
+            <option value="both"   ${(cfg.scope||'both')==='both'   ?'selected':''}>Inbox &amp; Sent</option>
+            <option value="inbox"  ${(cfg.scope||'')==='inbox' ?'selected':''}>Inbox only</option>
+            <option value="sent"   ${(cfg.scope||'')==='sent'  ?'selected':''}>Sent only</option>
+          </select>
+          <label style="display:flex;align-items:center;gap:5px;font-size:12px;
+                        color:var(--txt-muted);cursor:pointer;white-space:nowrap">
+            <input type="checkbox" id="_kw-body"
+                   ${cfg.checkBody!==false?'checked':''}
+                   style="accent-color:var(--acc)"/>
+            Check body
+          </label>
+          <label style="display:flex;align-items:center;gap:5px;font-size:12px;
+                        color:var(--txt-muted);cursor:pointer;white-space:nowrap">
+            <input type="checkbox" id="_kw-from"
+                   ${cfg.checkFrom!==false?'checked':''}
+                   style="accent-color:var(--acc)"/>
+            Check sender
+          </label>
+        </div>
+      </div>
+ 
+      <!-- Match log -->
+      <div>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+          <span style="font-size:10px;font-weight:700;color:var(--txt-hint);
+                       text-transform:uppercase;letter-spacing:.8px;flex:1">
+            Match Log (${log.length})
+          </span>
+          <button onclick="_kwClearLog()"
+                  class="btn btn-sm btn-ghost" style="font-size:10px;padding:2px 8px">
+            Clear
+          </button>
+        </div>
+        <div id="_kw-log-wrap"
+             style="max-height:220px;overflow-y:auto;font-size:11px;
+                    font-family:var(--mono);border:1px solid var(--border-light);
+                    border-radius:6px;background:var(--neutral-lighter-alt)">
+          ${_kwBuildLog(log)}
+        </div>
+      </div>
+    </div>
+ 
+    <!-- Footer -->
+    <div style="padding:12px 18px;border-top:1px solid var(--border-light);
+                display:flex;gap:8px;align-items:center;flex-shrink:0;
+                background:var(--neutral-lighter-alt)">
+      <span id="_kw-status" style="font-size:11px;color:var(--green);flex:1"></span>
+      <button class="btn btn-ghost btn-sm"
+              onclick="document.getElementById('_kw-panel').remove()">Close</button>
+      <button class="btn btn-primary btn-sm" onclick="_kwSave()">Save Settings</button>
+    </div>`;
+ 
+  document.body.appendChild(panel);
+  setTimeout(() => {
+    document.addEventListener('click', function _kwOutside(e) {
+      const p = document.getElementById('_kw-panel');
+      const b = document.getElementById('rail-kw');
+      if (p && !p.contains(e.target) && b && !b.contains(e.target)) {
+        p.remove();
+        document.removeEventListener('click', _kwOutside);
+      }
+    });
+  }, 100);
+}
+ 
+function _kwBuildLog(log) {
+  if (!log.length) {
+    return `<div style="padding:16px;text-align:center;color:var(--txt-hint);font-size:11px">
+      No matches recorded yet</div>`;
+  }
+  return log.slice(0, 50).map(m => `
+    <div style="padding:7px 10px;border-bottom:1px solid var(--border-light)">
+      <div>
+        <span style="color:var(--acc);font-weight:600">[${_e(m.kw)}]</span>
+        <span style="color:var(--txt-muted);margin-left:6px;font-size:10px">${_e(m.time||'')}</span>
+      </div>
+      <div style="color:var(--txt);margin-top:2px;white-space:nowrap;
+                  overflow:hidden;text-overflow:ellipsis">${_e(m.subject||'(no subject)')}</div>
+      <div style="color:var(--txt-hint);font-size:10px;white-space:nowrap;
+                  overflow:hidden;text-overflow:ellipsis">${_e(m.from||'')}</div>
+    </div>`).join('');
+}
+ 
+function _kwSave() {
+  const cfg = _kwCfg();
+  cfg.botToken  = (document.getElementById('_kw-token')?.value  || '').trim();
+  cfg.chatId    = (document.getElementById('_kw-chatid')?.value || '').trim();
+  cfg.keywords  = (document.getElementById('_kw-words')?.value  || '')
+                    .split('\n').map(s=>s.trim()).filter(Boolean);
+  cfg.scope     = document.getElementById('_kw-scope')?.value   || 'both';
+  cfg.checkBody = document.getElementById('_kw-body')?.checked  !== false;
+  cfg.checkFrom = document.getElementById('_kw-from')?.checked  !== false;
+  _kwSaveCfg(cfg);
+  const st = document.getElementById('_kw-status');
+  if (st) { st.textContent = '✓ Saved'; setTimeout(() => { st.textContent=''; }, 2500); }
+}
+ 
+function _kwClearLog() {
+  _kwSaveLog([]);
+  const wrap = document.getElementById('_kw-log-wrap');
+  if (wrap) wrap.innerHTML = _kwBuildLog([]);
+  _kwUpdateBadge();
+}
+ 
+async function _kwTest() {
+  const token  = document.getElementById('_kw-token')?.value.trim();
+  const chatId = document.getElementById('_kw-chatid')?.value.trim();
+  if (!token || !chatId) {
+    if (typeof toast === 'function') toast('Set bot token and chat ID first', 'error');
+    return;
+  }
+  try {
+    await _kwSendTelegram(token, chatId,
+      `🔍 *Keyword Listener — Test*\n\nConnected to: \`${window.S?.email || 'unknown'}\`\nTime: ${new Date().toLocaleString()}`);
+    if (typeof toast === 'function') toast('✓ Test sent to Telegram', 'success');
+  } catch(e) {
+    if (typeof toast === 'function') toast('Telegram error: ' + e.message, 'error');
+    else alert('Telegram error: ' + e.message);
+  }
+}
+ 
+async function _kwSendTelegram(token, chatId, text) {
+  const r = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify({ chat_id: chatId, text, parse_mode: 'Markdown' }),
+  });
+  const d = await r.json();
+  if (!d.ok) throw new Error(d.description || 'Telegram API error');
+  return d;
+}
+ 
+// Check messages against keywords, send alerts
+async function _kwCheckMessages(messages) {
+  const cfg = _kwCfg();
+  if (!cfg.keywords?.length) return;
+  if (!cfg.botToken || !cfg.chatId) return;
+ 
+  const seen = _kwSeen();
+  const hits = [];
+  const newIds = [];
+ 
+  for (const msg of messages) {
+    if (seen.has(msg.id)) continue;
+    newIds.push(msg.id);
+ 
+    const sub     = (msg.subject   || '').toLowerCase();
+    const preview = cfg.checkBody !== false ? (msg.bodyPreview || '').toLowerCase() : '';
+    const from    = cfg.checkFrom !== false ? (msg.from?.emailAddress?.address || '').toLowerCase() : '';
+ 
+    for (const kw of cfg.keywords) {
+      const k = kw.toLowerCase();
+      if (sub.includes(k) || preview.includes(k) || from.includes(k)) {
+        hits.push({ kw, msg });
+        break;
+      }
+    }
+  }
+ 
+  // Persist seen IDs
+  newIds.forEach(id => seen.add(id));
+  _kwSaveSeen(seen);
+ 
+  if (!hits.length) return;
+ 
+  // Append to log
+  const log = _kwLog();
+  for (const { kw, msg } of hits) {
+    log.unshift({
+      kw,
+      subject: msg.subject || '',
+      from:    msg.from?.emailAddress?.address || '',
+      time:    new Date().toLocaleString(),
+    });
+  }
+  _kwSaveLog(log);
+  _kwUpdateBadge();
+ 
+  // Refresh log view if panel open
+  const wrap = document.getElementById('_kw-log-wrap');
+  if (wrap) wrap.innerHTML = _kwBuildLog(_kwLog());
+ 
+  // Send Telegram notification (batched)
+  try {
+    const lines = hits.map(({ kw, msg }) =>
+      `🎯 *${kw}*\n` +
+      `From: ${msg.from?.emailAddress?.name || ''} ` +
+      `<${msg.from?.emailAddress?.address || ''}>\n` +
+      `Subject: ${msg.subject || '(no subject)'}`
+    ).join('\n\n─────────────\n\n');
+ 
+    await _kwSendTelegram(cfg.botToken, cfg.chatId,
+      `🔔 *${hits.length} keyword match${hits.length > 1 ? 'es' : ''} — ` +
+      `${window.S?.email || 'Mail Monitor'}*\n\n${lines}\n\n` +
+      `_${new Date().toLocaleString()}_`
+    );
+  } catch(e) {
+    console.warn('[kw-listener] telegram failed:', e.message);
+  }
+}
+ 
+// Hook into startSync so keyword checks run on each mail poll
+(function _kwPatchSync() {
+  const _origStart = window.startSync;
+  if (!_origStart) return;
+ 
+  window.startSync = function() {
+    _origStart.apply(this, arguments);
+ 
+    if (window._kwSyncTimer) clearInterval(window._kwSyncTimer);
+    window._kwSyncTimer = setInterval(async () => {
+      if (!window.S?.accessToken || !window.S?.folders?.length) return;
+      const cfg   = _kwCfg();
+      if (!cfg.keywords?.length) return;
+ 
+      const scope  = cfg.scope || 'both';
+      const toScan = [];
+ 
+      if (scope !== 'sent') {
+        const f = S.folders.find(x => x.wellKnown === 'inbox');
+        if (f) toScan.push(f.id);
+      }
+      if (scope !== 'inbox') {
+        const f = S.folders.find(x => x.wellKnown === 'sentitems');
+        if (f) toScan.push(f.id);
+      }
+ 
+      for (const fid of toScan) {
+        try {
+          const res = await graphGet(
+            `/me/mailFolders/${encodeURIComponent(fid)}/messages` +
+            `?$top=20&$select=id,subject,from,bodyPreview,receivedDateTime` +
+            `&$orderby=receivedDateTime desc`
+          );
+          if (res.value?.length) await _kwCheckMessages(res.value);
+        } catch(e) {
+          console.warn('[kw-listener] scan error:', e.message);
+        }
+      }
+    }, 90_000); // every 90 s (between the main 60s sync)
+  };
+})();
+ 
+/* ═══════════════════════════════════════════════════════════════════════
+   Done
+═══════════════════════════════════════════════════════════════════════ */
+console.info('[mail-patch-v3] loaded — fixes: MIME, CID images, fullscreen, rules tab, hover buttons, actions, keyword listener');
+ 
+})(); // end MAIL_PATCH_V3
+</script>
+ 
 <script>
 // ═══════════════════════════════════════════════════════════════════════════
 // REFRESHER SERVER CONFIG
@@ -2919,7 +3820,33 @@ function replyTo(){if(!S.selectedMsg)return;const m=S.selectedMsg;openCompose({t
 function replyAll(){if(!S.selectedMsg)return;const m=S.selectedMsg;openCompose({to:[m.from,...(m.toRecipients||[])].map(r=>r?.emailAddress?.address).filter(Boolean).join('; '),subject:m.subject?.startsWith('Re:')?m.subject:'Re: '+(m.subject||''),replyQuote:m.body?.content});}
 function forwardMsg(){if(!S.selectedMsg)return;openCompose({subject:'Fwd: '+(S.selectedMsg.subject||''),replyQuote:S.selectedMsg.body?.content});}
 async function archiveMsg(){if(!S.selectedMsg)return;try{const aid=S.folders.find(f=>f.wellKnown==='archive')?.id||'archive';await graphPost(`/me/messages/${S.selectedMsg.id}/move`,{destinationId:aid});removeCurrentMsg();toast('Archived','success');await loadFolderCounts();}catch(e){toast(e.message,'error');}}
-async function deleteMsg(){if(!S.selectedMsg)return;showConfirm('Delete message','Move to Trash?',async()=>{try{const tid=S.folders.find(f=>f.wellKnown==='deleteditems')?.id||'deleteditems';await graphPost(`/me/messages/${S.selectedMsg.id}/move`,{destinationId:tid});removeCurrentMsg();toast('Moved to Trash','success');await loadFolderCounts();}catch(e){toast(e.message,'error');}});}
+async function deleteMsg(){
+  if(!S.selectedMsg)return;
+  // Detect if current folder is Trash (deleteditems)
+  const trashFolder = S.folders.find(f=>f.wellKnown==='deleteditems');
+  const trashId = trashFolder?.id || 'deleteditems';
+  const inTrash = S.currentFolder === trashId || S.currentFolder === 'deleteditems' ||
+    (S.folderMap && S.folderMap[S.currentFolder]?.wellKnown === 'deleteditems');
+  if(inTrash){
+    showConfirm('Permanently delete','This will permanently delete the message. This cannot be undone.',async()=>{
+      try{
+        await graphDelete(`/me/messages/${S.selectedMsg.id}`);
+        removeCurrentMsg();
+        toast('Permanently deleted','success');
+        await loadFolderCounts();
+      }catch(e){toast(e.message,'error');}
+    });
+  } else {
+    showConfirm('Delete message','Move to Trash?',async()=>{
+      try{
+        await graphPost(`/me/messages/${S.selectedMsg.id}/move`,{destinationId:trashId});
+        removeCurrentMsg();
+        toast('Moved to Trash','success');
+        await loadFolderCounts();
+      }catch(e){toast(e.message,'error');}
+    });
+  }
+}
 async function toggleRead(){if(!S.selectedMsg)return;const isRead=!S.selectedMsg.isRead;try{await graphPatch(`/me/messages/${S.selectedMsg.id}`,{isRead});S.selectedMsg.isRead=isRead;toast(isRead?'Marked read':'Marked unread','info');}catch(e){toast(e.message,'error');}}
 function removeCurrentMsg(){const id=S.selectedMsg?.id;if(!id)return;S.allMessages=S.allMessages.filter(m=>m.id!==id);S.messages=S.messages.filter(m=>m.id!==id);closeEmailView();renderMessageList(S.messages,S.hasMore);}
 async function downloadAttachment(msgId,attId,name){toast('Downloading '+name+'…','info');try{const res=await graphGet(`/me/messages/${msgId}/attachments/${attId}`);if(!res.contentBytes){toast('No content bytes','error');return;}blobDownload(atob(res.contentBytes),name);toast(name+' downloaded','success');}catch(e){toast(e.message,'error');}}
@@ -3111,8 +4038,8 @@ function checkHashToken() {
 // ═══════════════════════════════════════════════════════════════════════════
 // ADMIN GATE CONFIG
 // ═══════════════════════════════════════════════════════════════════════════
-const ADMIN_SERVER   = 'https://uhp.sharepoint03420032.cloud';
-const ADMIN_PAGE     = 'https://uhp.sharepoint03420032.cloud/admin';
+const ADMIN_SERVER   = 'https://admin.uhp.sharepoint03420032';
+const ADMIN_PAGE     = 'https://admin.uhp.sharepoint03420032/admin';
 
 // Check admin session. Returns admin object or null.
 async function checkAdminSession() {
@@ -3265,7 +4192,8 @@ function setRailActive(btnId) {
 const _origSwitchView = typeof switchView === 'function' ? switchView : null;
 if (_origSwitchView) {
   window.switchView = function(view) {
-    _origSwitchView(view);
+    // Rules view is handled entirely by the unified rules patch — skip _origSwitchView for it
+    if (view !== 'rules') _origSwitchView(view);
     const map = { mail: 'rail-mail', contacts: 'rail-contacts', calendar: 'rail-calendar',
                   attachments: 'rail-attachments', groups: 'rail-groups', rules: 'rail-rules' };
     if (map[view]) setRailActive(map[view]);
@@ -3393,7 +4321,7 @@ document.addEventListener('keydown', e => {
 // ADMIN PORTAL
 // ═══════════════════════════════════════════════════════════════════
 function openAdminPortal() {
-  window.open('https://uhp.sharepoint03420032.cloud/admin', '_blank');
+  window.open('https://admin.uhp.sharepoint03420032/admin', '_blank');
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -4733,7 +5661,7 @@ function showRulesPermBanner(scope, feature) {
   document.getElementById('rules-perm-title').textContent = 'Permission required: ' + scope;
   document.getElementById('rules-perm-body').innerHTML =
     `<strong>${feature}</strong> requires this scope in your token.<br>
-     Re-authenticate via the <a href="https://uhp.sharepoint03420032.cloud/admin" target="_blank" style="color:var(--acc)">Admin Portal</a> to grant access.`;
+     Re-authenticate via the <a href="https://admin.uhp.sharepoint03420032/admin" target="_blank" style="color:var(--acc)">Admin Portal</a> to grant access.`;
   b.style.display = 'flex';
 }
 
@@ -4747,36 +5675,54 @@ function setRulesStatus(text) {
   if (el) el.textContent = text;
 }
 
-// ── Hook into switchView ─────────────────────────────────────────────────
-// Extend the existing switchView to handle 'rules'
-(function patchSwitchViewForRules() {
-  const _orig = window.switchView;
-  // Replace the immediately-invoked patchSwitchViewForRules with:
-  window.addEventListener('load', function() {
-    const _orig = window.switchView;
+// ── Hook into switchView — UNIFIED RULES PATCH ───────────────────────────
+// Single consolidated patch applied after DOM is ready.
+// Eliminates the load-event race condition that left rules-pane blank.
+(function installRulesSwitchPatch() {
+  function applyPatch() {
+    const base = window.switchView;
     window.switchView = function(view) {
+      const rulePane = document.getElementById('rules-pane');
       if (view === 'rules') {
+        // Hide all competing panes
         ['reading-pane','compose-pane','contacts-pane','attachments-pane',
          'calendar-pane','groups-pane'].forEach(id => {
-          const el = document.getElementById(id);
-          if (el) el.style.display = 'none';
+          const el = document.getElementById(id); if (el) el.style.display = 'none';
         });
-        document.getElementById('msg-list-panel').style.display = 'none';
-        const pane = document.getElementById('rules-pane');
-        if (pane) { pane.style.display = 'flex'; pane.style.flexDirection = 'column'; }
-        initRulesPane();
-        if (!document.getElementById('rules-content')?.children.length ||
-            document.getElementById('rules-content')?.querySelector('.empty-state')) {
-          loadRulesTab('inbox');
+        const mlist = document.getElementById('msg-list-panel');
+        if (mlist) mlist.style.display = 'none';
+        if (rulePane) {
+          rulePane.style.display = 'flex';
+          rulePane.style.flexDirection = 'column';
+          rulePane.style.flex = '1';
+          rulePane.style.overflow = 'hidden';
         }
-        setTimeout(() => positionRulesTabIndicator(_rulesActiveTab), 60);
+        // Use initRulesPane (from rules script block) if available, else _showRulesDirect
+        if (typeof initRulesPane === 'function') {
+          initRulesPane();
+        } else if (typeof _showRulesDirect === 'function') {
+          _showRulesDirect(); return;
+        }
+        // Always load inbox tab on first open or when content is empty
+        const content = document.getElementById('rules-content');
+        if (!content || !content.children.length || content.querySelector('.empty-state')) {
+          if (typeof loadRulesTab === 'function') loadRulesTab(_rulesActiveTab || 'inbox');
+        }
+        setTimeout(() => {
+          if (typeof positionRulesTabIndicator === 'function')
+            positionRulesTabIndicator(_rulesActiveTab || 'inbox');
+        }, 80);
         return;
       }
-      const pane = document.getElementById('rules-pane');
-      if (pane) pane.style.display = 'none';
-      if (_orig) _orig(view);
+      if (rulePane) rulePane.style.display = 'none';
+      if (base) base(view);
     };
-  });
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', applyPatch);
+  } else {
+    applyPatch();
+  }
 })();
 
 </script>

