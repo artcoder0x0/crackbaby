@@ -6013,5 +6013,997 @@ wireCtxMenuDelegation();
 <!-- END PATCH 5 -->
  
 
+
+<!-- ============================================================ -->
+<!-- PATCH 6 — Theme Fix + Rules + Folder Management + Tooltips  -->
+<!-- ============================================================ -->
+<script>
+(function PATCH6() {
+'use strict';
+
+// ═══════════════════════════════════════════════════════════════
+// FIX A: THEME SYSTEM — inline all themes, switch via CSS vars
+// Removes external CSS dependency that caused 404
+// ═══════════════════════════════════════════════════════════════
+const THEMES = {
+  outlook: {
+    '--acc':'#9237FA','--acc-dark':'#6D22BD','--acc-light':'#D7B8FF','--acc-lightest':'#F0E5FF',
+    '--bg-app':'#F0F0F0','--bg-canvas':'#FFFFFF','--bg-surface':'#FAFAFA','--bg-raised':'#FFFFFF',
+    '--txt':'#242424','--txt-sub':'#424242','--txt-muted':'#616161','--txt-hint':'#808080',
+    '--border':'#E0E0E0','--border-light':'#EBEBEB','--white':'#FFFFFF',
+    '--neutral-lighter':'#F5F5F5','--neutral-light':'#F0F0F0',
+  },
+  midnight: {
+    '--acc':'#A78BFA','--acc-dark':'#7C3AED','--acc-light':'#4C1D95','--acc-lightest':'#2D1B69',
+    '--bg-app':'#0D0D0D','--bg-canvas':'#1A1A2E','--bg-surface':'#16213E','--bg-raised':'#1A1A2E',
+    '--txt':'#E2E8F0','--txt-sub':'#CBD5E1','--txt-muted':'#94A3B8','--txt-hint':'#64748B',
+    '--border':'#2D3748','--border-light':'#1E2B3C','--white':'#1A1A2E',
+    '--neutral-lighter':'#162032','--neutral-light':'#1E2B3C',
+  },
+  graphite: {
+    '--acc':'#60A5FA','--acc-dark':'#2563EB','--acc-light':'#1E3A5F','--acc-lightest':'#172544',
+    '--bg-app':'#1C1C1C','--bg-canvas':'#2A2A2A','--bg-surface':'#252525','--bg-raised':'#2A2A2A',
+    '--txt':'#E5E5E5','--txt-sub':'#CCCCCC','--txt-muted':'#999999','--txt-hint':'#666666',
+    '--border':'#3A3A3A','--border-light':'#333333','--white':'#2A2A2A',
+    '--neutral-lighter':'#303030','--neutral-light':'#353535',
+  },
+  ocean: {
+    '--acc':'#22D3EE','--acc-dark':'#0891B2','--acc-light':'#164E63','--acc-lightest':'#0C3547',
+    '--bg-app':'#0A1628','--bg-canvas':'#0F2040','--bg-surface':'#0D1B38','--bg-raised':'#0F2040',
+    '--txt':'#E0F2FE','--txt-sub':'#BAE6FD','--txt-muted':'#7DD3FC','--txt-hint':'#38BDF8',
+    '--border':'#1E3A5F','--border-light':'#163050','--white':'#0F2040',
+    '--neutral-lighter':'#13274A','--neutral-light':'#172D52',
+  },
+  violet: {
+    '--acc':'#F472B6','--acc-dark':'#DB2777','--acc-light':'#831843','--acc-lightest':'#500724',
+    '--bg-app':'#1A0A2E','--bg-canvas':'#250D3E','--bg-surface':'#1F0A35','--bg-raised':'#250D3E',
+    '--txt':'#FAE8FF','--txt-sub':'#F0ABFC','--txt-muted':'#E879F9','--txt-hint':'#D946EF',
+    '--border':'#3B0764','--border-light':'#2E0550','--white':'#250D3E',
+    '--neutral-lighter':'#2D1048','--neutral-light':'#321255',
+  },
+};
+
+function applyTheme(name) {
+  const vars = THEMES[name] || THEMES.outlook;
+  const root = document.documentElement;
+  Object.entries(vars).forEach(([k,v]) => root.style.setProperty(k, v));
+  localStorage.setItem('lm_active_theme', name);
+  window._activeTheme = name;
+  // Update theme button states in settings panel if open
+  document.querySelectorAll('[data-theme-btn]').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.themeBtn === name);
+    btn.style.outline = btn.dataset.themeBtn === name ? '2px solid var(--acc)' : '';
+  });
+}
+
+// Apply saved theme on load
+const savedTheme = localStorage.getItem('lm_active_theme') || localStorage.getItem('lm_theme') || 'outlook';
+applyTheme(savedTheme);
+
+// Expose globally so settings panel can call it
+window.applyTheme = applyTheme;
+window.THEMES = THEMES;
+
+// Patch the settings panel to use inline theme switcher
+const _origToggleSettings = window.toggleSettingsPanel;
+if (_origToggleSettings) {
+  window.toggleSettingsPanel = function() {
+    _origToggleSettings();
+    setTimeout(() => {
+      const panel = document.getElementById('_settings-panel');
+      if (!panel) return;
+      // Find theme section and replace/enhance it
+      let themeSection = panel.querySelector('#_theme-section');
+      if (themeSection) return; // Already patched
+      const themeRow = Array.from(panel.querySelectorAll('label')).find(el => el.textContent.includes('Theme'));
+      if (!themeRow) {
+        // Inject theme picker at top of panel content
+        const content = panel.querySelector('[style*="overflow-y:auto"]') || panel.children[1];
+        if (content) {
+          const sec = document.createElement('div');
+          sec.id = '_theme-section';
+          sec.innerHTML = buildThemePickerHTML();
+          content.prepend(sec);
+        }
+      }
+    }, 50);
+  };
+}
+
+function buildThemePickerHTML() {
+  const current = window._activeTheme || 'outlook';
+  const themeColors = {
+    outlook:'#9237FA', midnight:'#A78BFA', graphite:'#60A5FA', ocean:'#22D3EE', violet:'#F472B6'
+  };
+  return `
+    <div style="font-size:10px;font-weight:700;color:var(--txt-hint);text-transform:uppercase;letter-spacing:.7px;margin-bottom:8px">Colour theme</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">
+      ${Object.entries(themeColors).map(([name,color]) => `
+        <button data-theme-btn="${name}" onclick="applyTheme('${name}')"
+          title="${name.charAt(0).toUpperCase()+name.slice(1)}"
+          style="width:36px;height:36px;border-radius:50%;border:2px solid ${name===current?'var(--acc)':'transparent'};
+                 background:${color};cursor:pointer;transition:transform .15s;outline:${name===current?'2px solid var(--acc)':'none'};outline-offset:2px"
+          onmouseover="this.style.transform='scale(1.15)'"
+          onmouseout="this.style.transform=''">
+        </button>
+      `).join('')}
+    </div>
+    <div style="border-bottom:1px solid var(--border-light);margin-bottom:12px"></div>
+  `;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// FIX B: TOOLTIPS — persistent, clickable, no flicker
+// ═══════════════════════════════════════════════════════════════
+(function fixTooltips() {
+  // Remove old tooltip logic by overwriting the tip element if any
+  const oldTip = document.getElementById('_owa-tooltip');
+  if (oldTip) oldTip.remove();
+
+  // Create new tooltip element
+  const tip = document.createElement('div');
+  tip.id = '_owa-tooltip';
+  tip.style.cssText = `
+    position:fixed;z-index:99999;
+    background:rgba(30,30,30,.92);color:#fff;
+    font-size:11.5px;font-family:var(--font);
+    padding:5px 9px;border-radius:5px;
+    pointer-events:none;
+    white-space:nowrap;
+    opacity:0;transition:opacity .12s;
+    max-width:280px;overflow:hidden;text-overflow:ellipsis;
+    box-shadow:0 2px 8px rgba(0,0,0,.3);
+  `;
+  document.body.appendChild(tip);
+
+  let _tipTimer = null;
+  let _currentEl = null;
+  let _titleStore = new WeakMap();
+
+  function stealTitle(el) {
+    if (_titleStore.has(el)) return;
+    const t = el.getAttribute('title');
+    if (!t) return;
+    _titleStore.set(el, t);
+    el.removeAttribute('title');
+  }
+
+  function restoreTitle(el) {
+    if (!el || !_titleStore.has(el)) return;
+    el.setAttribute('title', _titleStore.get(el));
+    _titleStore.delete(el);
+  }
+
+  function showTip(el, text, x, y) {
+    tip.textContent = text;
+    const vw = window.innerWidth, vh = window.innerHeight;
+    let left = x + 12, top = y + 16;
+    if (left + 200 > vw) left = x - 200;
+    if (top + 30 > vh) top = y - 28;
+    tip.style.left = left + 'px';
+    tip.style.top  = top  + 'px';
+    tip.style.opacity = '1';
+  }
+
+  function hideTip() {
+    tip.style.opacity = '0';
+    if (_currentEl) restoreTitle(_currentEl);
+    _currentEl = null;
+  }
+
+  document.addEventListener('mousemove', e => {
+    const el = e.target.closest('[title],[data-tip]');
+    if (!el) {
+      clearTimeout(_tipTimer);
+      hideTip();
+      return;
+    }
+    // Don't steal title from interactive things where the title is part of a11y
+    stealTitle(el);
+    const text = _titleStore.get(el) || el.getAttribute('data-tip') || '';
+    if (!text) return;
+
+    if (_currentEl !== el) {
+      clearTimeout(_tipTimer);
+      hideTip();
+      _currentEl = el;
+      _tipTimer = setTimeout(() => showTip(el, text, e.clientX, e.clientY), 600);
+    }
+  }, true);
+
+  document.addEventListener('mouseleave', () => { clearTimeout(_tipTimer); hideTip(); }, true);
+  document.addEventListener('mousedown',  () => { clearTimeout(_tipTimer); hideTip(); }, true);
+  document.addEventListener('scroll',     () => { clearTimeout(_tipTimer); hideTip(); }, true);
+})();
+
+// ═══════════════════════════════════════════════════════════════
+// FIX C: FOLDER CONTEXT MENU — right-click folders for
+//         New subfolder / Rename / Delete / Mark all read /
+//         Move folder / Empty folder / Create rule for folder
+// ═══════════════════════════════════════════════════════════════
+(function wireFolderCtxMenu() {
+  const sidebar = document.getElementById('sidebar') || document.getElementById('folder-list-dynamic');
+  if (!sidebar) return;
+
+  sidebar.addEventListener('contextmenu', e => {
+    const fi = e.target.closest('.fi');
+    if (!fi) return;
+    e.preventDefault(); e.stopPropagation();
+    const folderId = fi.id.replace('fi-', '');
+    if (!folderId) return;
+    const folderNode = window.S?.folderMap?.[folderId];
+    const folderName = folderNode?.name || fi.querySelector('.fi-name')?.textContent || folderId;
+    showFolderCtxMenu(e.clientX, e.clientY, folderId, folderName, folderNode);
+  });
+})();
+
+function showFolderCtxMenu(cx, cy, folderId, folderName, node) {
+  removeFolderCtxMenu();
+  const menu = document.createElement('div');
+  menu.id = '_folder-ctx-menu';
+  const isDeletable = node && !['inbox','sentitems','deleteditems','drafts','junkemail','archive','outbox'].includes(node.wellKnown);
+
+  menu.innerHTML = `
+    <style>
+      #_folder-ctx-menu {
+        position:fixed;z-index:9600;
+        background:var(--bg-raised);
+        border:1px solid var(--border);
+        border-radius:var(--radius-lg);
+        padding:4px 0;min-width:220px;
+        box-shadow:var(--shadow-xl);
+        animation:ctxIn .1s ease;
+      }
+      ._fi-ctx-item {
+        display:flex;align-items:center;gap:10px;
+        padding:7px 14px;cursor:pointer;
+        font-size:12.5px;color:var(--txt-sub);
+        transition:background .08s;white-space:nowrap;
+      }
+      ._fi-ctx-item:hover { background:var(--neutral-lighter);color:var(--txt); }
+      ._fi-ctx-sep { border:none;border-top:1px solid var(--border-light);margin:3px 0; }
+      ._fi-ctx-item.danger:hover { background:var(--red-light);color:var(--red); }
+    </style>
+    <div class="_fi-ctx-item" onclick="_folderAction('new-sub','${folderId}','${esc4(folderName)}')">
+      <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/><line x1="12" y1="11" x2="12" y2="17"/><line x1="9" y1="14" x2="15" y2="14"/></svg>
+      New subfolder
+    </div>
+    <div class="_fi-ctx-item" onclick="_folderAction('rename','${folderId}','${esc4(folderName)}')">
+      <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>
+      Rename folder
+    </div>
+    <div class="_fi-ctx-item" onclick="_folderAction('mark-read','${folderId}','${esc4(folderName)}')">
+      <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+      Mark all as read
+    </div>
+    <div class="_fi-ctx-item" onclick="_folderAction('empty','${folderId}','${esc4(folderName)}')">
+      <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/></svg>
+      Empty folder
+    </div>
+    <div class="_fi-ctx-item" onclick="_folderAction('create-rule','${folderId}','${esc4(folderName)}')">
+      <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+      Create rule for folder
+    </div>
+    ${isDeletable ? `
+    <hr class="_fi-ctx-sep">
+    <div class="_fi-ctx-item danger" onclick="_folderAction('delete','${folderId}','${esc4(folderName)}')">
+      <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/></svg>
+      Delete folder
+    </div>` : ''}
+  `;
+
+  let left = cx, top = cy;
+  document.body.appendChild(menu);
+  const r = menu.getBoundingClientRect();
+  if (left + r.width  > window.innerWidth  - 8) left = cx - r.width;
+  if (top  + r.height > window.innerHeight - 8) top  = cy - r.height;
+  menu.style.left = left + 'px';
+  menu.style.top  = top  + 'px';
+
+  setTimeout(() => {
+    document.addEventListener('mousedown', removeFolderCtxMenu, { once: true });
+  }, 0);
+}
+
+function removeFolderCtxMenu() {
+  const m = document.getElementById('_folder-ctx-menu');
+  if (m) m.remove();
+}
+
+function esc4(s) { return String(s||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'&quot;'); }
+
+async function _folderAction(action, folderId, folderName) {
+  removeFolderCtxMenu();
+  switch(action) {
+
+    case 'new-sub': {
+      const name = prompt(`New subfolder inside "${folderName}":`, '');
+      if (!name || !name.trim()) return;
+      try {
+        const res = await graphPost(`/me/mailFolders/${folderId}/childFolders`, { displayName: name.trim() });
+        toast(`Folder "${name.trim()}" created`, 'success');
+        await loadFolders();
+      } catch(e) { toast('Error: ' + e.message, 'error'); }
+      break;
+    }
+
+    case 'rename': {
+      const newName = prompt(`Rename "${folderName}" to:`, folderName);
+      if (!newName || !newName.trim() || newName.trim() === folderName) return;
+      try {
+        await graphPatch(`/me/mailFolders/${folderId}`, { displayName: newName.trim() });
+        toast(`Renamed to "${newName.trim()}"`, 'success');
+        await loadFolders();
+      } catch(e) { toast('Error: ' + e.message, 'error'); }
+      break;
+    }
+
+    case 'mark-read': {
+      try {
+        // Use batch: fetch messages, mark each read
+        toast('Marking all as read…', 'info');
+        let skip = 0;
+        let marked = 0;
+        while (true) {
+          const res = await graphGet(`/me/mailFolders/${folderId}/messages?$filter=isRead eq false&$top=50&$skip=${skip}&$select=id`);
+          const msgs = res.value || [];
+          if (!msgs.length) break;
+          await Promise.all(msgs.map(m => graphPatch(`/me/messages/${m.id}`, { isRead: true })));
+          marked += msgs.length;
+          if (!res['@odata.nextLink']) break;
+          skip += 50;
+        }
+        toast(`Marked ${marked} messages as read`, 'success');
+        await loadFolderCounts();
+        if (window.S?.currentFolderId === folderId) refreshFolder();
+      } catch(e) { toast('Error: ' + e.message, 'error'); }
+      break;
+    }
+
+    case 'empty': {
+      if (!confirm(`Empty folder "${folderName}"? This moves all messages to Deleted Items.`)) return;
+      try {
+        toast('Emptying folder…', 'info');
+        const trashId = window.S?.folders?.find(f => f.wellKnown === 'deleteditems')?.id || 'deleteditems';
+        let count = 0;
+        while (true) {
+          const res = await graphGet(`/me/mailFolders/${folderId}/messages?$top=50&$select=id`);
+          const msgs = res.value || [];
+          if (!msgs.length) break;
+          await Promise.all(msgs.map(m => graphPost(`/me/messages/${m.id}/move`, { destinationId: trashId })));
+          count += msgs.length;
+        }
+        toast(`Moved ${count} messages to Deleted Items`, 'success');
+        await loadFolderCounts();
+        if (window.S?.currentFolderId === folderId) refreshFolder();
+      } catch(e) { toast('Error: ' + e.message, 'error'); }
+      break;
+    }
+
+    case 'delete': {
+      if (!confirm(`Delete folder "${folderName}" and all its contents?`)) return;
+      try {
+        await graphPost(`/me/mailFolders/${folderId}`, null, 'DELETE');
+        toast(`Folder "${folderName}" deleted`, 'success');
+        if (window.S?.currentFolderId === folderId) {
+          const inbox = window.S.folders?.find(f => f.wellKnown === 'inbox');
+          if (inbox) selectFolderById(inbox.id, inbox.name);
+        }
+        await loadFolders();
+      } catch(e) { toast('Error: ' + e.message, 'error'); }
+      break;
+    }
+
+    case 'create-rule':
+      openCreateRuleDialog({ moveToFolder: folderId, folderName });
+      break;
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// FIX D: RULES PANE — full working rules display + CRUD
+// ═══════════════════════════════════════════════════════════════
+
+// Override the switchView to properly handle 'rules'
+const __origSwitchView = window.switchView;
+window.switchView = function(view) {
+  if (view === 'rules') {
+    // Hide all panes
+    ['msg-list-panel','reading-pane','contacts-pane','attachments-pane','calendar-pane','groups-pane'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.style.display = 'none';
+    });
+    // Show rules pane
+    const rp = document.getElementById('rules-pane');
+    if (rp) {
+      rp.style.display = 'flex';
+      rp.style.flexDirection = 'column';
+      rp.style.flex = '1';
+      rp.style.overflow = 'hidden';
+    }
+    window.S && (window.S.currentView = 'rules');
+    // Rail highlight
+    document.querySelectorAll('.owa-rail-btn').forEach(b => b.classList.remove('active'));
+    const rb = document.getElementById('rail-rules');
+    if (rb) rb.classList.add('active');
+    // Load rules
+    initRulesPane();
+    return;
+  }
+  if (__origSwitchView) __origSwitchView(view);
+  // Make sure rules pane is hidden when switching away
+  const rp = document.getElementById('rules-pane');
+  if (rp) rp.style.display = 'none';
+};
+
+let _rulesInited = false;
+let _inboxRules   = [];
+
+async function initRulesPane() {
+  const pane = document.getElementById('rules-pane');
+  if (!pane) return;
+
+  if (!_rulesInited) {
+    pane.innerHTML = buildRulesPaneHTML();
+    _rulesInited = true;
+  }
+
+  switchRulesTab('inbox');
+}
+
+function buildRulesPaneHTML() {
+  return `
+    <div class="rules-header" style="display:flex;align-items:center;padding:12px 20px;border-bottom:1px solid var(--border-light);gap:8px;flex-shrink:0">
+      <span class="rules-title" style="font-size:15px;font-weight:600;flex:1">Inbox Rules</span>
+      <button class="btn btn-sm btn-ghost" onclick="loadRulesTab()" title="Refresh">
+        <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+        Refresh
+      </button>
+      <button class="btn btn-sm btn-primary" onclick="openCreateRuleDialog({})" style="display:flex;align-items:center;gap:5px">
+        <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        New rule
+      </button>
+    </div>
+    <div id="_rules-tab-bar" style="display:flex;border-bottom:1px solid var(--border-light);padding:0 16px;flex-shrink:0">
+      ${['inbox','blocked','safe'].map((t,i) => `
+        <button class="_rtab ${i===0?'active':''}" data-tab="${t}" onclick="switchRulesTab('${t}')"
+          style="padding:8px 14px;border:none;background:transparent;cursor:pointer;font-size:12.5px;
+                 color:var(--txt-muted);border-bottom:2px solid transparent;margin-bottom:-1px;transition:all .12s">
+          ${t.charAt(0).toUpperCase()+t.slice(1)} rules
+        </button>`).join('')}
+    </div>
+    <div id="_rules-content" style="flex:1;overflow-y:auto;padding:0"></div>
+  `;
+}
+
+function switchRulesTab(tab) {
+  document.querySelectorAll('._rtab').forEach(b => {
+    const active = b.dataset.tab === tab;
+    b.classList.toggle('active', active);
+    b.style.color = active ? 'var(--acc)' : 'var(--txt-muted)';
+    b.style.borderBottomColor = active ? 'var(--acc)' : 'transparent';
+    b.style.fontWeight = active ? '600' : '400';
+  });
+  window._rulesCurrentTab = tab;
+  loadRulesTab(tab);
+}
+window.switchRulesTab = switchRulesTab;
+
+async function loadRulesTab(tab) {
+  tab = tab || window._rulesCurrentTab || 'inbox';
+  const content = document.getElementById('_rules-content');
+  if (!content) return;
+
+  content.innerHTML = `<div style="padding:40px;text-align:center;color:var(--txt-muted);font-size:13px">
+    <div style="margin-bottom:12px">⏳</div>Loading ${tab} rules…</div>`;
+
+  try {
+    if (tab === 'inbox') {
+      const res = await graphGet('/me/mailFolders/inbox/messageRules');
+      _inboxRules = res.value || [];
+      renderInboxRules(_inboxRules, content);
+    } else if (tab === 'blocked') {
+      const res = await graphGet('/me/inferenceClassification/overrides');
+      const blocked = (res.value || []).filter(o => o.classifyAs === 'focused' || o.classifyAs === 'other');
+      renderBlockedSenders(blocked, content);
+    } else if (tab === 'safe') {
+      content.innerHTML = renderEmptyTab('Safe senders', 'Emails from safe senders are never moved to Junk.');
+    }
+  } catch(e) {
+    const isScope = e.message && e.message.includes('403');
+    content.innerHTML = `
+      <div style="padding:32px;text-align:center">
+        <div style="font-size:36px;margin-bottom:12px">${isScope?'🔒':'⚠️'}</div>
+        <div style="font-size:14px;font-weight:600;color:var(--txt);margin-bottom:8px">
+          ${isScope ? 'Permission required' : 'Could not load rules'}
+        </div>
+        <div style="font-size:12px;color:var(--txt-muted);margin-bottom:16px">${esc(e.message)}</div>
+        <button class="btn btn-sm btn-primary" onclick="loadRulesTab()">Try again</button>
+      </div>`;
+  }
+}
+window.loadRulesTab = loadRulesTab;
+
+function renderInboxRules(rules, container) {
+  if (!rules.length) {
+    container.innerHTML = renderEmptyTab('No inbox rules', 'Create a rule to automatically organise your email.');
+    return;
+  }
+  container.innerHTML = rules.map((rule, i) => {
+    const conds = formatConditions(rule.conditions);
+    const acts  = formatActions(rule.actions);
+    const enabled = rule.isEnabled !== false;
+    return `
+      <div class="_rule-row" style="padding:14px 20px;border-bottom:1px solid var(--border-light);display:flex;align-items:flex-start;gap:12px">
+        <div style="flex-shrink:0;padding-top:2px">
+          <input type="checkbox" ${enabled?'checked':''} title="${enabled?'Disable':'Enable'} rule"
+            onchange="toggleRule('${rule.id}',this.checked)"
+            style="accent-color:var(--acc);width:14px;height:14px;cursor:pointer">
+        </div>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:13px;font-weight:600;color:var(--txt);margin-bottom:4px;display:flex;align-items:center;gap:8px">
+            ${esc(rule.displayName || 'Untitled rule')}
+            ${!enabled?'<span style="font-size:10px;color:var(--txt-hint);background:var(--neutral-light);padding:1px 6px;border-radius:3px">Disabled</span>':''}
+          </div>
+          <div style="font-size:12px;color:var(--txt-muted);margin-bottom:2px"><b>When:</b> ${conds||'(any message)'}</div>
+          <div style="font-size:12px;color:var(--txt-muted)"><b>Do:</b> ${acts||'(no action)'}</div>
+        </div>
+        <div style="display:flex;gap:4px;flex-shrink:0">
+          <button class="icon-btn" title="Edit rule" onclick="openEditRuleDialog('${rule.id}')">
+            <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>
+          </button>
+          <button class="icon-btn" title="Delete rule" onclick="deleteRule('${rule.id}')" style="color:var(--red)">
+            <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/></svg>
+          </button>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+function renderBlockedSenders(overrides, container) {
+  if (!overrides.length) {
+    container.innerHTML = renderEmptyTab('No blocked senders', 'Block a sender to move their email to Junk.');
+    return;
+  }
+  container.innerHTML = `<div style="padding:12px 20px;font-size:12px;color:var(--txt-muted)">
+    ${overrides.length} override${overrides.length!==1?'s':''}</div>` +
+    overrides.map(o => `
+      <div style="padding:10px 20px;border-bottom:1px solid var(--border-light);display:flex;align-items:center;gap:10px">
+        <div style="width:28px;height:28px;border-radius:50%;background:${avatarColor(o.senderEmailAddress?.address||'')};
+                    display:flex;align-items:center;justify-content:center;font-size:11px;color:#fff;flex-shrink:0">
+          ${initials(o.senderEmailAddress?.name||o.senderEmailAddress?.address||'?')}
+        </div>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:13px;color:var(--txt);font-weight:500">${esc(o.senderEmailAddress?.name||'')}</div>
+          <div style="font-size:11.5px;color:var(--txt-muted)">${esc(o.senderEmailAddress?.address||'')}</div>
+        </div>
+        <span style="font-size:10px;background:${o.classifyAs==='focused'?'var(--blue-light)':'var(--red-light)'};
+              color:${o.classifyAs==='focused'?'var(--blue)':'var(--red)'};padding:2px 7px;border-radius:3px">
+          ${o.classifyAs}
+        </span>
+      </div>`).join('');
+}
+
+function renderEmptyTab(title, subtitle) {
+  return `<div style="padding:60px 24px;text-align:center">
+    <div style="font-size:40px;margin-bottom:12px">📋</div>
+    <div style="font-size:14px;font-weight:600;color:var(--txt);margin-bottom:6px">${title}</div>
+    <div style="font-size:12.5px;color:var(--txt-muted);margin-bottom:20px">${subtitle}</div>
+    <button class="btn btn-sm btn-primary" onclick="openCreateRuleDialog({})">Create rule</button>
+  </div>`;
+}
+
+function formatConditions(c) {
+  if (!c) return '';
+  const parts = [];
+  if (c.senderContains?.length)    parts.push('From contains: ' + c.senderContains.join(', '));
+  if (c.fromAddresses?.length)     parts.push('From: ' + c.fromAddresses.map(a=>a.emailAddress?.address||a).join(', '));
+  if (c.subjectContains?.length)   parts.push('Subject contains: ' + c.subjectContains.join(', '));
+  if (c.bodyContains?.length)      parts.push('Body contains: ' + c.bodyContains.join(', '));
+  if (c.hasAttachments)            parts.push('Has attachments');
+  if (c.isImportant)               parts.push('Is important');
+  return parts.join(' AND ') || '';
+}
+
+function formatActions(a) {
+  if (!a) return '';
+  const parts = [];
+  if (a.moveToFolder)     parts.push('Move to folder');
+  if (a.copyToFolder)     parts.push('Copy to folder');
+  if (a.delete)           parts.push('Delete');
+  if (a.permanentDelete)  parts.push('Permanently delete');
+  if (a.markAsRead)       parts.push('Mark as read');
+  if (a.markImportance)   parts.push('Mark as ' + a.markImportance);
+  if (a.forwardTo?.length)       parts.push('Forward to ' + a.forwardTo.map(r=>r.emailAddress?.address||r).join(', '));
+  if (a.redirectTo?.length)      parts.push('Redirect to ' + a.redirectTo.map(r=>r.emailAddress?.address||r).join(', '));
+  if (a.stopProcessingRules)     parts.push('Stop processing rules');
+  return parts.join(', ') || '';
+}
+
+async function toggleRule(ruleId, enabled) {
+  try {
+    await graphPatch(`/me/mailFolders/inbox/messageRules/${ruleId}`, { isEnabled: enabled });
+    toast(enabled ? 'Rule enabled' : 'Rule disabled', 'success');
+  } catch(e) { toast('Error: ' + e.message, 'error'); loadRulesTab('inbox'); }
+}
+window.toggleRule = toggleRule;
+
+async function deleteRule(ruleId) {
+  if (!confirm('Delete this rule?')) return;
+  try {
+    await graphPost(`/me/mailFolders/inbox/messageRules/${ruleId}`, null, 'DELETE');
+    toast('Rule deleted', 'success');
+    loadRulesTab('inbox');
+  } catch(e) { toast('Error: ' + e.message, 'error'); }
+}
+window.deleteRule = deleteRule;
+
+function openEditRuleDialog(ruleId) {
+  const rule = _inboxRules.find(r => r.id === ruleId);
+  if (!rule) return;
+  openCreateRuleDialog({
+    editId: ruleId,
+    name: rule.displayName,
+    fromContains: (rule.conditions?.senderContains||[]).join('; '),
+    subjectContains: (rule.conditions?.subjectContains||[]).join('; '),
+    hasAttachments: rule.conditions?.hasAttachments,
+    moveToFolder: rule.actions?.moveToFolder,
+    markAsRead: rule.actions?.markAsRead,
+    delete_: rule.actions?.delete,
+    stopProcessing: rule.actions?.stopProcessingRules,
+  });
+}
+window.openEditRuleDialog = openEditRuleDialog;
+
+// ═══════════════════════════════════════════════════════════════
+// FIX E: CREATE RULE DIALOG — advanced, functional
+// ═══════════════════════════════════════════════════════════════
+function openCreateRuleDialog(opts) {
+  opts = opts || {};
+  // Close any existing
+  const old = document.getElementById('_create-rule-modal');
+  if (old) old.remove();
+
+  const folders = (window.S?.folders || []);
+  const folderOptions = folders.map(f =>
+    `<option value="${f.id}" ${f.id===opts.moveToFolder?'selected':''}>${esc(f.name)}</option>`
+  ).join('');
+
+  const modal = document.createElement('div');
+  modal.id = '_create-rule-modal';
+  modal.style.cssText = `
+    position:fixed;inset:0;z-index:99000;
+    background:rgba(0,0,0,.4);backdrop-filter:blur(2px);
+    display:flex;align-items:center;justify-content:center;
+  `;
+
+  modal.innerHTML = `
+    <div style="background:var(--bg-raised);border-radius:var(--radius-xl);
+                box-shadow:var(--shadow-xl);width:520px;max-width:95vw;max-height:90vh;
+                overflow-y:auto;animation:slideUp .18s ease">
+      <div style="padding:18px 24px;border-bottom:1px solid var(--border-light);display:flex;align-items:center;gap:10px">
+        <span style="font-size:15px;font-weight:700;flex:1">${opts.editId?'Edit rule':'Create inbox rule'}</span>
+        <button onclick="document.getElementById('_create-rule-modal').remove()"
+          style="border:none;background:transparent;cursor:pointer;font-size:20px;color:var(--txt-muted);line-height:1">✕</button>
+      </div>
+      <div style="padding:20px 24px;display:flex;flex-direction:column;gap:16px">
+
+        <div>
+          <label style="font-size:12px;font-weight:600;color:var(--txt-muted);display:block;margin-bottom:5px">Rule name</label>
+          <input id="_rule-name" type="text" placeholder="My inbox rule"
+            value="${esc(opts.name||opts.folderName ? 'Move to ' + (opts.folderName||'') : '')}"
+            style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:var(--radius-md);
+                   background:var(--bg-canvas);color:var(--txt);font-size:13px;outline:none">
+        </div>
+
+        <div style="font-size:12px;font-weight:700;color:var(--txt-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:-8px">Conditions — When the message…</div>
+
+        <div>
+          <label style="font-size:12px;font-weight:600;color:var(--txt-muted);display:block;margin-bottom:5px">
+            From address contains (separate with semicolons)
+          </label>
+          <input id="_rule-from" type="text" placeholder="e.g. newsletter@example.com; noreply@"
+            value="${esc(opts.fromContains||'')}"
+            style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:var(--radius-md);
+                   background:var(--bg-canvas);color:var(--txt);font-size:13px;outline:none">
+        </div>
+
+        <div>
+          <label style="font-size:12px;font-weight:600;color:var(--txt-muted);display:block;margin-bottom:5px">
+            Subject contains (separate with semicolons)
+          </label>
+          <input id="_rule-subject" type="text" placeholder="e.g. Invoice; Payment"
+            value="${esc(opts.subjectContains||'')}"
+            style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:var(--radius-md);
+                   background:var(--bg-canvas);color:var(--txt);font-size:13px;outline:none">
+        </div>
+
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;color:var(--txt)">
+          <input type="checkbox" id="_rule-has-att" ${opts.hasAttachments?'checked':''}
+            style="accent-color:var(--acc);width:14px;height:14px">
+          Has attachments
+        </label>
+
+        <div style="font-size:12px;font-weight:700;color:var(--txt-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:-8px">Actions — Then…</div>
+
+        <div>
+          <label style="font-size:12px;font-weight:600;color:var(--txt-muted);display:block;margin-bottom:5px">Move to folder</label>
+          <select id="_rule-move-folder"
+            style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:var(--radius-md);
+                   background:var(--bg-canvas);color:var(--txt);font-size:13px;outline:none">
+            <option value="">— Don't move —</option>
+            ${folderOptions}
+          </select>
+        </div>
+
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;color:var(--txt)">
+          <input type="checkbox" id="_rule-mark-read" ${opts.markAsRead?'checked':''}
+            style="accent-color:var(--acc);width:14px;height:14px">
+          Mark as read
+        </label>
+
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;color:var(--txt)">
+          <input type="checkbox" id="_rule-delete" ${opts.delete_?'checked':''}
+            style="accent-color:var(--acc);width:14px;height:14px">
+          Delete message
+        </label>
+
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;color:var(--txt)">
+          <input type="checkbox" id="_rule-stop" ${opts.stopProcessing?'checked':''}
+            style="accent-color:var(--acc);width:14px;height:14px">
+          Stop processing more rules
+        </label>
+
+      </div>
+      <div style="padding:14px 24px;border-top:1px solid var(--border-light);display:flex;justify-content:flex-end;gap:8px">
+        <button class="btn btn-ghost" onclick="document.getElementById('_create-rule-modal').remove()">Cancel</button>
+        <button class="btn btn-primary" onclick="saveRule('${opts.editId||''}')">
+          ${opts.editId ? 'Save changes' : 'Create rule'}
+        </button>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(modal);
+  document.getElementById('_rule-name').focus();
+
+  // Close on backdrop click
+  modal.addEventListener('mousedown', e => {
+    if (e.target === modal) modal.remove();
+  });
+}
+window.openCreateRuleDialog = openCreateRuleDialog;
+
+async function saveRule(editId) {
+  const name     = document.getElementById('_rule-name')?.value.trim();
+  const fromRaw  = document.getElementById('_rule-from')?.value.trim();
+  const subjRaw  = document.getElementById('_rule-subject')?.value.trim();
+  const hasAtt   = document.getElementById('_rule-has-att')?.checked;
+  const moveTo   = document.getElementById('_rule-move-folder')?.value;
+  const markRead = document.getElementById('_rule-mark-read')?.checked;
+  const del      = document.getElementById('_rule-delete')?.checked;
+  const stop     = document.getElementById('_rule-stop')?.checked;
+
+  if (!name) { toast('Please enter a rule name', 'error'); return; }
+
+  const fromList = fromRaw ? fromRaw.split(/[;,]+/).map(s=>s.trim()).filter(Boolean) : [];
+  const subjList = subjRaw ? subjRaw.split(/[;,]+/).map(s=>s.trim()).filter(Boolean) : [];
+
+  if (!fromList.length && !subjList.length && !hasAtt) {
+    toast('Please add at least one condition', 'error');
+    return;
+  }
+  if (!moveTo && !markRead && !del) {
+    toast('Please add at least one action', 'error');
+    return;
+  }
+
+  const rule = {
+    displayName: name,
+    sequence: _inboxRules.length + 1,
+    isEnabled: true,
+    conditions: {},
+    actions: {},
+  };
+
+  if (fromList.length)  rule.conditions.senderContains  = fromList;
+  if (subjList.length)  rule.conditions.subjectContains = subjList;
+  if (hasAtt)           rule.conditions.hasAttachments   = true;
+  if (moveTo)           rule.actions.moveToFolder         = moveTo;
+  if (markRead)         rule.actions.markAsRead           = true;
+  if (del)              rule.actions.delete               = true;
+  if (stop)             rule.actions.stopProcessingRules  = true;
+
+  try {
+    if (editId) {
+      await graphPatch(`/me/mailFolders/inbox/messageRules/${editId}`, rule);
+      toast('Rule updated', 'success');
+    } else {
+      await graphPost('/me/mailFolders/inbox/messageRules', rule);
+      toast('Rule created', 'success');
+    }
+    document.getElementById('_create-rule-modal')?.remove();
+    _rulesInited = false; // Force re-render
+    if (window.S?.currentView === 'rules') {
+      initRulesPane();
+    }
+  } catch(e) {
+    toast('Error: ' + e.message, 'error');
+  }
+}
+window.saveRule = saveRule;
+
+// ═══════════════════════════════════════════════════════════════
+// FIX F: CREATE RULE FROM MESSAGE CONTEXT MENU
+// Also: Move to folder should show ALL folders + create new
+// ═══════════════════════════════════════════════════════════════
+
+// Patch context menu to add "Create rule" and enhanced "Move to"
+const __origBuildCtxMenuHtml = window.buildCtxMenuHtml;
+if (__origBuildCtxMenuHtml) {
+  window.buildCtxMenuHtml = function(cx, cy, msgId) {
+    // We'll let the original build, then inject extra items via DOM after
+    return __origBuildCtxMenuHtml(cx, cy, msgId);
+  };
+}
+
+// Patch showMoveToMenu to show ALL folders, not just first 12
+window.showMoveToMenu = function(e) {
+  if (!window.S || !S.selectedMsg) { toast('No message selected','info'); return; }
+  e.stopPropagation();
+  const existing = document.getElementById('_moveto_menu');
+  if (existing) { existing.remove(); return; }
+
+  const menu = document.createElement('div');
+  menu.id = '_moveto_menu';
+  menu.style.cssText = `position:fixed;top:${e.clientY+4}px;left:${e.clientX}px;z-index:9700;
+    min-width:220px;max-height:360px;overflow-y:auto;
+    background:var(--bg-raised);border:1px solid var(--border);
+    border-radius:var(--radius-lg);box-shadow:var(--shadow-xl);padding:4px 0;`;
+
+  const folders = window.S?.folders || [];
+  const searchId = '_mvto-search';
+
+  menu.innerHTML = `
+    <div style="padding:6px 10px;border-bottom:1px solid var(--border-light)">
+      <input id="${searchId}" type="text" placeholder="Search folders…"
+        style="width:100%;padding:5px 8px;border:1px solid var(--border);border-radius:4px;
+               font-size:12px;background:var(--bg-canvas);color:var(--txt);outline:none"
+        oninput="filterMoveToMenu(this.value)">
+    </div>
+    <div id="_mvto-list">
+      ${folders.map(f => `
+        <div class="ctx-item _mvto-item" data-name="${esc(f.name.toLowerCase())}"
+             onclick="moveMsgToFolder('${f.id}','${esc4(f.name)}')"
+             style="display:flex;align-items:center;gap:8px;padding:7px 12px;cursor:pointer;font-size:12.5px;color:var(--txt-sub)">
+          <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+          </svg>
+          ${esc(f.name)}
+        </div>`).join('')}
+    </div>
+    <div style="padding:4px 0;border-top:1px solid var(--border-light)">
+      <div class="ctx-item" onclick="promptNewFolderAndMove()"
+           style="display:flex;align-items:center;gap:8px;padding:7px 12px;cursor:pointer;font-size:12.5px;color:var(--acc)">
+        <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+          <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+        </svg>
+        New folder…
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(menu);
+
+  // Keep on screen
+  const r = menu.getBoundingClientRect();
+  if (r.right  > window.innerWidth)  menu.style.left = (e.clientX - r.width) + 'px';
+  if (r.bottom > window.innerHeight) menu.style.top  = (e.clientY - r.height) + 'px';
+
+  setTimeout(() => document.addEventListener('click', () => menu.remove(), { once: true }), 0);
+  setTimeout(() => document.getElementById(searchId)?.focus(), 50);
+};
+
+window.filterMoveToMenu = function(q) {
+  const lq = q.toLowerCase();
+  document.querySelectorAll('._mvto-item').forEach(el => {
+    el.style.display = el.dataset.name.includes(lq) ? '' : 'none';
+  });
+};
+
+window.promptNewFolderAndMove = async function() {
+  document.getElementById('_moveto_menu')?.remove();
+  const name = prompt('New folder name:');
+  if (!name || !name.trim()) return;
+  try {
+    const res = await graphPost('/me/mailFolders', { displayName: name.trim() });
+    toast(`Folder "${name.trim()}" created`, 'success');
+    await moveMsgToFolder(res.id, name.trim());
+    await loadFolders();
+  } catch(e) { toast('Error: ' + e.message, 'error'); }
+};
+
+// Add "Create rule" to the existing context menu
+// Patch ctxMove to also offer rule creation
+const __origCtxMove = window.ctxMove;
+window.ctxMove = function(e) { window.showMoveToMenu(e); };
+
+// Expose Create Rule from message context via a new function
+window.ctxCreateRule = function() {
+  if (!window.S?.selectedMsg) return;
+  const msg = S.selectedMsg;
+  const from = msg.from?.emailAddress?.address || '';
+  const subj  = msg.subject || '';
+  openCreateRuleDialog({ fromContains: from });
+};
+
+// ═══════════════════════════════════════════════════════════════
+// FIX G: Patch graphPost to support DELETE method
+// ═══════════════════════════════════════════════════════════════
+const __origGraphPost = window.graphPost;
+if (__origGraphPost) {
+  window.graphPost = async function(path, body, method) {
+    method = method || 'POST';
+    if (method === 'DELETE' && body === null) {
+      // Use fetch directly for DELETE with no body
+      try {
+        const token = window.S?.accessToken;
+        if (!token) throw new Error('No access token');
+        const r = await fetch('https://graph.microsoft.com/v1.0' + path, {
+          method: 'DELETE',
+          headers: { Authorization: 'Bearer ' + token },
+        });
+        if (!r.ok) {
+          const txt = await r.text().catch(()=>'');
+          throw new Error(txt || ('HTTP ' + r.status));
+        }
+        return {};
+      } catch(e) { throw e; }
+    }
+    return __origGraphPost(path, body, method);
+  };
+}
+
+// ═══════════════════════════════════════════════════════════════
+// INIT — apply theme and wire everything on DOM ready
+// ═══════════════════════════════════════════════════════════════
+function ready(fn) {
+  if (document.readyState !== 'loading') fn();
+  else document.addEventListener('DOMContentLoaded', fn);
+}
+
+ready(() => {
+  // Re-apply theme (in case CSS vars were overridden)
+  applyTheme(localStorage.getItem('lm_active_theme') || 'outlook');
+
+  // Add @keyframes for modal
+  if (!document.getElementById('_p6-styles')) {
+    const s = document.createElement('style');
+    s.id = '_p6-styles';
+    s.textContent = `
+      @keyframes slideUp { from{transform:translateY(20px);opacity:0} to{transform:translateY(0);opacity:1} }
+      @keyframes ctxIn   { from{opacity:0;transform:scale(.96)} to{opacity:1;transform:scale(1)} }
+      .ctx-item:hover { background:var(--neutral-lighter)!important;color:var(--txt)!important; }
+    `;
+    document.head.appendChild(s);
+  }
+
+  // Wire folder sidebar right-click (re-wire in case it ran before DOM)
+  wireFolderCtxMenu();
+
+  // Patch switchView for rules tab in the rail buttons
+  document.querySelectorAll('[onclick*="rules"]').forEach(el => {
+    if (el.getAttribute('onclick')?.includes("switchView('rules')")) {
+      // Already wired
+    }
+  });
+});
+
+console.info('[PATCH-6] Theme+Rules+Folders+Tooltips loaded');
+
+})(); // end PATCH6
+</script>
+<!-- END PATCH 6 -->
+
 </body>
 </html>
