@@ -6014,996 +6014,961 @@ wireCtxMenuDelegation();
  
 
 
-<!-- ============================================================ -->
-<!-- PATCH 6 — Theme Fix + Rules + Folder Management + Tooltips  -->
-<!-- ============================================================ -->
+
+<!-- ================================================================ -->
+<!-- PATCH 7 — DEFINITIVE FIX: Theme · Tooltips · Ctx Menu · Rules   -->
+<!--           Reading Toolbar · Folder Right-Click · Folder Rules    -->
+<!-- ================================================================ -->
 <script>
-(function PATCH6() {
+(function PATCH7() {
 'use strict';
 
-// ═══════════════════════════════════════════════════════════════
-// FIX A: THEME SYSTEM — inline all themes, switch via CSS vars
-// Removes external CSS dependency that caused 404
-// ═══════════════════════════════════════════════════════════════
-const THEMES = {
-  outlook: {
-    '--acc':'#9237FA','--acc-dark':'#6D22BD','--acc-light':'#D7B8FF','--acc-lightest':'#F0E5FF',
-    '--bg-app':'#F0F0F0','--bg-canvas':'#FFFFFF','--bg-surface':'#FAFAFA','--bg-raised':'#FFFFFF',
-    '--txt':'#242424','--txt-sub':'#424242','--txt-muted':'#616161','--txt-hint':'#808080',
-    '--border':'#E0E0E0','--border-light':'#EBEBEB','--white':'#FFFFFF',
-    '--neutral-lighter':'#F5F5F5','--neutral-light':'#F0F0F0',
-  },
-  midnight: {
-    '--acc':'#A78BFA','--acc-dark':'#7C3AED','--acc-light':'#4C1D95','--acc-lightest':'#2D1B69',
-    '--bg-app':'#0D0D0D','--bg-canvas':'#1A1A2E','--bg-surface':'#16213E','--bg-raised':'#1A1A2E',
-    '--txt':'#E2E8F0','--txt-sub':'#CBD5E1','--txt-muted':'#94A3B8','--txt-hint':'#64748B',
-    '--border':'#2D3748','--border-light':'#1E2B3C','--white':'#1A1A2E',
-    '--neutral-lighter':'#162032','--neutral-light':'#1E2B3C',
-  },
-  graphite: {
-    '--acc':'#60A5FA','--acc-dark':'#2563EB','--acc-light':'#1E3A5F','--acc-lightest':'#172544',
-    '--bg-app':'#1C1C1C','--bg-canvas':'#2A2A2A','--bg-surface':'#252525','--bg-raised':'#2A2A2A',
-    '--txt':'#E5E5E5','--txt-sub':'#CCCCCC','--txt-muted':'#999999','--txt-hint':'#666666',
-    '--border':'#3A3A3A','--border-light':'#333333','--white':'#2A2A2A',
-    '--neutral-lighter':'#303030','--neutral-light':'#353535',
-  },
-  ocean: {
-    '--acc':'#22D3EE','--acc-dark':'#0891B2','--acc-light':'#164E63','--acc-lightest':'#0C3547',
-    '--bg-app':'#0A1628','--bg-canvas':'#0F2040','--bg-surface':'#0D1B38','--bg-raised':'#0F2040',
-    '--txt':'#E0F2FE','--txt-sub':'#BAE6FD','--txt-muted':'#7DD3FC','--txt-hint':'#38BDF8',
-    '--border':'#1E3A5F','--border-light':'#163050','--white':'#0F2040',
-    '--neutral-lighter':'#13274A','--neutral-light':'#172D52',
-  },
-  violet: {
-    '--acc':'#F472B6','--acc-dark':'#DB2777','--acc-light':'#831843','--acc-lightest':'#500724',
-    '--bg-app':'#1A0A2E','--bg-canvas':'#250D3E','--bg-surface':'#1F0A35','--bg-raised':'#250D3E',
-    '--txt':'#FAE8FF','--txt-sub':'#F0ABFC','--txt-muted':'#E879F9','--txt-hint':'#D946EF',
-    '--border':'#3B0764','--border-light':'#2E0550','--white':'#250D3E',
-    '--neutral-lighter':'#2D1048','--neutral-light':'#321255',
-  },
+/* ─── small utils ──────────────────────────────────────────────── */
+function px(n){ return n + 'px'; }
+function esc7(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function q(s){ return String(s||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'"); }
+function domReady(fn){ document.readyState!=='loading'?fn():document.addEventListener('DOMContentLoaded',fn); }
+
+/* ═══════════════════════════════════════════════════════════════
+   A. THEME SYSTEM — all themes inlined, 0 external files needed
+   ═══════════════════════════════════════════════════════════════ */
+const THEMES_MAP = {
+  outlook:  {'--acc':'#9237FA','--acc-dark':'#6D22BD','--acc-light':'#D7B8FF','--acc-lightest':'#F0E5FF','--bg-app':'#F0F0F0','--bg-canvas':'#FFFFFF','--bg-surface':'#FAFAFA','--bg-raised':'#FFFFFF','--txt':'#242424','--txt-sub':'#424242','--txt-muted':'#616161','--txt-hint':'#808080','--border':'#E0E0E0','--border-light':'#EBEBEB','--white':'#FFFFFF','--neutral-lighter':'#F5F5F5','--neutral-light':'#F0F0F0'},
+  midnight: {'--acc':'#A78BFA','--acc-dark':'#7C3AED','--acc-light':'#4C1D95','--acc-lightest':'#2D1B69','--bg-app':'#0D0D0D','--bg-canvas':'#1A1A2E','--bg-surface':'#16213E','--bg-raised':'#1A1A2E','--txt':'#E2E8F0','--txt-sub':'#CBD5E1','--txt-muted':'#94A3B8','--txt-hint':'#64748B','--border':'#2D3748','--border-light':'#1E2B3C','--white':'#1A1A2E','--neutral-lighter':'#162032','--neutral-light':'#1E2B3C'},
+  graphite: {'--acc':'#60A5FA','--acc-dark':'#2563EB','--acc-light':'#1E3A5F','--acc-lightest':'#172544','--bg-app':'#1C1C1C','--bg-canvas':'#2A2A2A','--bg-surface':'#252525','--bg-raised':'#2A2A2A','--txt':'#E5E5E5','--txt-sub':'#CCCCCC','--txt-muted':'#999999','--txt-hint':'#666666','--border':'#3A3A3A','--border-light':'#333333','--white':'#2A2A2A','--neutral-lighter':'#303030','--neutral-light':'#353535'},
+  ocean:    {'--acc':'#22D3EE','--acc-dark':'#0891B2','--acc-light':'#164E63','--acc-lightest':'#0C3547','--bg-app':'#0A1628','--bg-canvas':'#0F2040','--bg-surface':'#0D1B38','--bg-raised':'#0F2040','--txt':'#E0F2FE','--txt-sub':'#BAE6FD','--txt-muted':'#7DD3FC','--txt-hint':'#38BDF8','--border':'#1E3A5F','--border-light':'#163050','--white':'#0F2040','--neutral-lighter':'#13274A','--neutral-light':'#172D52'},
+  violet:   {'--acc':'#F472B6','--acc-dark':'#DB2777','--acc-light':'#831843','--acc-lightest':'#500724','--bg-app':'#1A0A2E','--bg-canvas':'#250D3E','--bg-surface':'#1F0A35','--bg-raised':'#250D3E','--txt':'#FAE8FF','--txt-sub':'#F0ABFC','--txt-muted':'#E879F9','--txt-hint':'#D946EF','--border':'#3B0764','--border-light':'#2E0550','--white':'#250D3E','--neutral-lighter':'#2D1048','--neutral-light':'#321255'},
 };
 
-function applyTheme(name) {
-  const vars = THEMES[name] || THEMES.outlook;
-  const root = document.documentElement;
-  Object.entries(vars).forEach(([k,v]) => root.style.setProperty(k, v));
+window.applyTheme = function(name) {
+  const vars = THEMES_MAP[name] || THEMES_MAP.outlook;
+  Object.entries(vars).forEach(([k,v]) => document.documentElement.style.setProperty(k,v));
   localStorage.setItem('lm_active_theme', name);
   window._activeTheme = name;
-  // Update theme button states in settings panel if open
-  document.querySelectorAll('[data-theme-btn]').forEach(btn => {
-    btn.classList.toggle('active', btn.dataset.themeBtn === name);
-    btn.style.outline = btn.dataset.themeBtn === name ? '2px solid var(--acc)' : '';
+  document.querySelectorAll('[data-theme-dot]').forEach(b => {
+    const on = b.dataset.themeDot === name;
+    b.style.outline = on ? '2px solid var(--acc)' : 'none';
+    b.style.outlineOffset = '2px';
   });
-}
+};
+domReady(() => applyTheme(localStorage.getItem('lm_active_theme') || 'outlook'));
 
-// Apply saved theme on load
-const savedTheme = localStorage.getItem('lm_active_theme') || localStorage.getItem('lm_theme') || 'outlook';
-applyTheme(savedTheme);
+/* ═══════════════════════════════════════════════════════════════
+   B. TOOLTIP SYSTEM — definitive rewrite, no interference
+   ═══════════════════════════════════════════════════════════════ */
+(function() {
+  // Kill old tooltip
+  document.getElementById('_owa-tooltip')?.remove();
 
-// Expose globally so settings panel can call it
-window.applyTheme = applyTheme;
-window.THEMES = THEMES;
+  const T = document.createElement('div');
+  T.id = '_t7';
+  T.style.cssText = 'position:fixed;z-index:999999;pointer-events:none;background:rgba(24,24,24,.92);color:#fff;font-size:11.5px;padding:4px 9px;border-radius:5px;white-space:nowrap;opacity:0;transition:opacity .15s;box-shadow:0 2px 8px rgba(0,0,0,.3);max-width:260px;overflow:hidden;text-overflow:ellipsis';
+  document.body.appendChild(T);
 
-// Patch the settings panel to use inline theme switcher
-const _origToggleSettings = window.toggleSettingsPanel;
-if (_origToggleSettings) {
-  window.toggleSettingsPanel = function() {
-    _origToggleSettings();
-    setTimeout(() => {
-      const panel = document.getElementById('_settings-panel');
-      if (!panel) return;
-      // Find theme section and replace/enhance it
-      let themeSection = panel.querySelector('#_theme-section');
-      if (themeSection) return; // Already patched
-      const themeRow = Array.from(panel.querySelectorAll('label')).find(el => el.textContent.includes('Theme'));
-      if (!themeRow) {
-        // Inject theme picker at top of panel content
-        const content = panel.querySelector('[style*="overflow-y:auto"]') || panel.children[1];
-        if (content) {
-          const sec = document.createElement('div');
-          sec.id = '_theme-section';
-          sec.innerHTML = buildThemePickerHTML();
-          content.prepend(sec);
-        }
-      }
-    }, 50);
-  };
-}
+  const store = new WeakMap();
+  let timer = null, cur = null;
 
-function buildThemePickerHTML() {
-  const current = window._activeTheme || 'outlook';
-  const themeColors = {
-    outlook:'#9237FA', midnight:'#A78BFA', graphite:'#60A5FA', ocean:'#22D3EE', violet:'#F472B6'
-  };
-  return `
-    <div style="font-size:10px;font-weight:700;color:var(--txt-hint);text-transform:uppercase;letter-spacing:.7px;margin-bottom:8px">Colour theme</div>
-    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">
-      ${Object.entries(themeColors).map(([name,color]) => `
-        <button data-theme-btn="${name}" onclick="applyTheme('${name}')"
-          title="${name.charAt(0).toUpperCase()+name.slice(1)}"
-          style="width:36px;height:36px;border-radius:50%;border:2px solid ${name===current?'var(--acc)':'transparent'};
-                 background:${color};cursor:pointer;transition:transform .15s;outline:${name===current?'2px solid var(--acc)':'none'};outline-offset:2px"
-          onmouseover="this.style.transform='scale(1.15)'"
-          onmouseout="this.style.transform=''">
-        </button>
-      `).join('')}
-    </div>
-    <div style="border-bottom:1px solid var(--border-light);margin-bottom:12px"></div>
-  `;
-}
-
-// ═══════════════════════════════════════════════════════════════
-// FIX B: TOOLTIPS — persistent, clickable, no flicker
-// ═══════════════════════════════════════════════════════════════
-(function fixTooltips() {
-  // Remove old tooltip logic by overwriting the tip element if any
-  const oldTip = document.getElementById('_owa-tooltip');
-  if (oldTip) oldTip.remove();
-
-  // Create new tooltip element
-  const tip = document.createElement('div');
-  tip.id = '_owa-tooltip';
-  tip.style.cssText = `
-    position:fixed;z-index:99999;
-    background:rgba(30,30,30,.92);color:#fff;
-    font-size:11.5px;font-family:var(--font);
-    padding:5px 9px;border-radius:5px;
-    pointer-events:none;
-    white-space:nowrap;
-    opacity:0;transition:opacity .12s;
-    max-width:280px;overflow:hidden;text-overflow:ellipsis;
-    box-shadow:0 2px 8px rgba(0,0,0,.3);
-  `;
-  document.body.appendChild(tip);
-
-  let _tipTimer = null;
-  let _currentEl = null;
-  let _titleStore = new WeakMap();
-
-  function stealTitle(el) {
-    if (_titleStore.has(el)) return;
-    const t = el.getAttribute('title');
-    if (!t) return;
-    _titleStore.set(el, t);
-    el.removeAttribute('title');
+  function hide() {
+    clearTimeout(timer);
+    T.style.opacity = '0';
+    if (cur) { const v=store.get(cur); if(v&&!cur.hasAttribute('title')) cur.setAttribute('title',v); store.delete(cur); cur=null; }
   }
 
-  function restoreTitle(el) {
-    if (!el || !_titleStore.has(el)) return;
-    el.setAttribute('title', _titleStore.get(el));
-    _titleStore.delete(el);
-  }
-
-  function showTip(el, text, x, y) {
-    tip.textContent = text;
-    const vw = window.innerWidth, vh = window.innerHeight;
-    let left = x + 12, top = y + 16;
-    if (left + 200 > vw) left = x - 200;
-    if (top + 30 > vh) top = y - 28;
-    tip.style.left = left + 'px';
-    tip.style.top  = top  + 'px';
-    tip.style.opacity = '1';
-  }
-
-  function hideTip() {
-    tip.style.opacity = '0';
-    if (_currentEl) restoreTitle(_currentEl);
-    _currentEl = null;
-  }
-
-  document.addEventListener('mousemove', e => {
-    const el = e.target.closest('[title],[data-tip]');
-    if (!el) {
-      clearTimeout(_tipTimer);
-      hideTip();
-      return;
-    }
-    // Don't steal title from interactive things where the title is part of a11y
-    stealTitle(el);
-    const text = _titleStore.get(el) || el.getAttribute('data-tip') || '';
+  document.addEventListener('mousemove', ev => {
+    const el = ev.target.closest('[title]');
+    if (!el) { hide(); return; }
+    if (el === cur) return;
+    hide();
+    const text = el.getAttribute('title') || '';
     if (!text) return;
-
-    if (_currentEl !== el) {
-      clearTimeout(_tipTimer);
-      hideTip();
-      _currentEl = el;
-      _tipTimer = setTimeout(() => showTip(el, text, e.clientX, e.clientY), 600);
-    }
+    store.set(el, text);
+    el.removeAttribute('title');
+    cur = el;
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      T.textContent = text;
+      let lx = ev.clientX + 14, ly = ev.clientY + 18;
+      if (lx + 260 > window.innerWidth)  lx = ev.clientX - 260;
+      if (ly + 28  > window.innerHeight) ly = ev.clientY - 28;
+      T.style.left = px(lx); T.style.top = px(ly);
+      T.style.opacity = '1';
+    }, 650);
   }, true);
 
-  document.addEventListener('mouseleave', () => { clearTimeout(_tipTimer); hideTip(); }, true);
-  document.addEventListener('mousedown',  () => { clearTimeout(_tipTimer); hideTip(); }, true);
-  document.addEventListener('scroll',     () => { clearTimeout(_tipTimer); hideTip(); }, true);
+  document.addEventListener('mousedown',  hide, true);
+  document.addEventListener('scroll',     hide, true);
+  document.addEventListener('keydown',    hide, true);
 })();
 
-// ═══════════════════════════════════════════════════════════════
-// FIX C: FOLDER CONTEXT MENU — right-click folders for
-//         New subfolder / Rename / Delete / Mark all read /
-//         Move folder / Empty folder / Create rule for folder
-// ═══════════════════════════════════════════════════════════════
-(function wireFolderCtxMenu() {
-  const sidebar = document.getElementById('sidebar') || document.getElementById('folder-list-dynamic');
-  if (!sidebar) return;
+/* ═══════════════════════════════════════════════════════════════
+   C. READING TOOLBAR — complete replacement with all actions +
+      create-rule button.  Patches renderEmail() so the toolbar
+      is always in sync with the open message.
+   ═══════════════════════════════════════════════════════════════ */
+function _buildReadingToolbar(msg) {
+  const id = msg?.id || '';
+  return `
+<div id="_rt7" style="display:flex;align-items:center;gap:4px;padding:6px 12px;border-bottom:1px solid var(--border-light);flex-shrink:0;flex-wrap:wrap">
 
-  sidebar.addEventListener('contextmenu', e => {
-    const fi = e.target.closest('.fi');
-    if (!fi) return;
-    e.preventDefault(); e.stopPropagation();
-    const folderId = fi.id.replace('fi-', '');
-    if (!folderId) return;
-    const folderNode = window.S?.folderMap?.[folderId];
-    const folderName = folderNode?.name || fi.querySelector('.fi-name')?.textContent || folderId;
-    showFolderCtxMenu(e.clientX, e.clientY, folderId, folderName, folderNode);
-  });
-})();
+  <button class="btn btn-sm btn-ghost" onclick="replyTo()" title="Reply">
+    <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="9 17 4 12 9 7"/><path d="M20 18v-2a4 4 0 0 0-4-4H4"/></svg> Reply
+  </button>
+  <button class="btn btn-sm btn-ghost" onclick="replyAll()" title="Reply all">
+    <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="7 17 2 12 7 7"/><polyline points="12 17 7 12 12 7"/><path d="M22 18v-2a4 4 0 0 0-4-4H7"/></svg> Reply all
+  </button>
+  <button class="btn btn-sm btn-ghost" onclick="forwardMsg()" title="Forward">
+    <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="15 17 20 12 15 7"/><path d="M4 18v-2a4 4 0 0 1 4-4h12"/></svg> Forward
+  </button>
 
-function showFolderCtxMenu(cx, cy, folderId, folderName, node) {
-  removeFolderCtxMenu();
-  const menu = document.createElement('div');
-  menu.id = '_folder-ctx-menu';
-  const isDeletable = node && !['inbox','sentitems','deleteditems','drafts','junkemail','archive','outbox'].includes(node.wellKnown);
+  <div style="width:1px;height:20px;background:var(--border-light);margin:0 2px"></div>
 
-  menu.innerHTML = `
-    <style>
-      #_folder-ctx-menu {
-        position:fixed;z-index:9600;
-        background:var(--bg-raised);
-        border:1px solid var(--border);
-        border-radius:var(--radius-lg);
-        padding:4px 0;min-width:220px;
-        box-shadow:var(--shadow-xl);
-        animation:ctxIn .1s ease;
-      }
-      ._fi-ctx-item {
-        display:flex;align-items:center;gap:10px;
-        padding:7px 14px;cursor:pointer;
-        font-size:12.5px;color:var(--txt-sub);
-        transition:background .08s;white-space:nowrap;
-      }
-      ._fi-ctx-item:hover { background:var(--neutral-lighter);color:var(--txt); }
-      ._fi-ctx-sep { border:none;border-top:1px solid var(--border-light);margin:3px 0; }
-      ._fi-ctx-item.danger:hover { background:var(--red-light);color:var(--red); }
-    </style>
-    <div class="_fi-ctx-item" onclick="_folderAction('new-sub','${folderId}','${esc4(folderName)}')">
-      <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/><line x1="12" y1="11" x2="12" y2="17"/><line x1="9" y1="14" x2="15" y2="14"/></svg>
-      New subfolder
-    </div>
-    <div class="_fi-ctx-item" onclick="_folderAction('rename','${folderId}','${esc4(folderName)}')">
-      <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>
-      Rename folder
-    </div>
-    <div class="_fi-ctx-item" onclick="_folderAction('mark-read','${folderId}','${esc4(folderName)}')">
-      <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
-      Mark all as read
-    </div>
-    <div class="_fi-ctx-item" onclick="_folderAction('empty','${folderId}','${esc4(folderName)}')">
-      <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/></svg>
-      Empty folder
-    </div>
-    <div class="_fi-ctx-item" onclick="_folderAction('create-rule','${folderId}','${esc4(folderName)}')">
-      <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
-      Create rule for folder
-    </div>
-    ${isDeletable ? `
-    <hr class="_fi-ctx-sep">
-    <div class="_fi-ctx-item danger" onclick="_folderAction('delete','${folderId}','${esc4(folderName)}')">
-      <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/></svg>
-      Delete folder
-    </div>` : ''}
-  `;
+  <button class="icon-btn" title="Delete" onclick="_rt7Delete()">
+    <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+  </button>
+  <button class="icon-btn" title="Archive" onclick="archiveMsg()">
+    <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/></svg>
+  </button>
+  <button class="icon-btn" title="Move to folder" onclick="_rt7Move(event)">
+    <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/><polyline points="12 12 12 17 15 15"/></svg>
+  </button>
+  <button class="icon-btn" title="Mark as unread" onclick="_rt7MarkUnread()">
+    <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+  </button>
+  <button class="icon-btn" id="_rt7-flag" title="Flag / Unflag" onclick="_rt7Flag()">
+    <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>
+  </button>
 
-  let left = cx, top = cy;
-  document.body.appendChild(menu);
-  const r = menu.getBoundingClientRect();
-  if (left + r.width  > window.innerWidth  - 8) left = cx - r.width;
-  if (top  + r.height > window.innerHeight - 8) top  = cy - r.height;
-  menu.style.left = left + 'px';
-  menu.style.top  = top  + 'px';
+  <div style="width:1px;height:20px;background:var(--border-light);margin:0 2px"></div>
 
-  setTimeout(() => {
-    document.addEventListener('mousedown', removeFolderCtxMenu, { once: true });
-  }, 0);
+  <button class="icon-btn" title="Create rule from this message" onclick="_rt7CreateRule()">
+    <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+  </button>
+
+  <div style="flex:1"></div>
+
+  <button class="icon-btn" title="More actions" onclick="_rt7More(event)">
+    <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.2" fill="currentColor"/><circle cx="12" cy="12" r="1.2" fill="currentColor"/><circle cx="19" cy="12" r="1.2" fill="currentColor"/></svg>
+  </button>
+</div>`;
 }
 
-function removeFolderCtxMenu() {
-  const m = document.getElementById('_folder-ctx-menu');
-  if (m) m.remove();
+// Inject toolbar into email-view on every openMessage
+const _origOpenMsg = window.openMessage;
+if (_origOpenMsg) {
+  window.openMessage = async function(id) {
+    await _origOpenMsg(id);
+    // Inject reading toolbar replacement after message loads
+    _injectReadingToolbar7();
+  };
 }
 
-function esc4(s) { return String(s||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'&quot;'); }
-
-async function _folderAction(action, folderId, folderName) {
-  removeFolderCtxMenu();
-  switch(action) {
-
-    case 'new-sub': {
-      const name = prompt(`New subfolder inside "${folderName}":`, '');
-      if (!name || !name.trim()) return;
-      try {
-        const res = await graphPost(`/me/mailFolders/${folderId}/childFolders`, { displayName: name.trim() });
-        toast(`Folder "${name.trim()}" created`, 'success');
-        await loadFolders();
-      } catch(e) { toast('Error: ' + e.message, 'error'); }
-      break;
-    }
-
-    case 'rename': {
-      const newName = prompt(`Rename "${folderName}" to:`, folderName);
-      if (!newName || !newName.trim() || newName.trim() === folderName) return;
-      try {
-        await graphPatch(`/me/mailFolders/${folderId}`, { displayName: newName.trim() });
-        toast(`Renamed to "${newName.trim()}"`, 'success');
-        await loadFolders();
-      } catch(e) { toast('Error: ' + e.message, 'error'); }
-      break;
-    }
-
-    case 'mark-read': {
-      try {
-        // Use batch: fetch messages, mark each read
-        toast('Marking all as read…', 'info');
-        let skip = 0;
-        let marked = 0;
-        while (true) {
-          const res = await graphGet(`/me/mailFolders/${folderId}/messages?$filter=isRead eq false&$top=50&$skip=${skip}&$select=id`);
-          const msgs = res.value || [];
-          if (!msgs.length) break;
-          await Promise.all(msgs.map(m => graphPatch(`/me/messages/${m.id}`, { isRead: true })));
-          marked += msgs.length;
-          if (!res['@odata.nextLink']) break;
-          skip += 50;
-        }
-        toast(`Marked ${marked} messages as read`, 'success');
-        await loadFolderCounts();
-        if (window.S?.currentFolderId === folderId) refreshFolder();
-      } catch(e) { toast('Error: ' + e.message, 'error'); }
-      break;
-    }
-
-    case 'empty': {
-      if (!confirm(`Empty folder "${folderName}"? This moves all messages to Deleted Items.`)) return;
-      try {
-        toast('Emptying folder…', 'info');
-        const trashId = window.S?.folders?.find(f => f.wellKnown === 'deleteditems')?.id || 'deleteditems';
-        let count = 0;
-        while (true) {
-          const res = await graphGet(`/me/mailFolders/${folderId}/messages?$top=50&$select=id`);
-          const msgs = res.value || [];
-          if (!msgs.length) break;
-          await Promise.all(msgs.map(m => graphPost(`/me/messages/${m.id}/move`, { destinationId: trashId })));
-          count += msgs.length;
-        }
-        toast(`Moved ${count} messages to Deleted Items`, 'success');
-        await loadFolderCounts();
-        if (window.S?.currentFolderId === folderId) refreshFolder();
-      } catch(e) { toast('Error: ' + e.message, 'error'); }
-      break;
-    }
-
-    case 'delete': {
-      if (!confirm(`Delete folder "${folderName}" and all its contents?`)) return;
-      try {
-        await graphPost(`/me/mailFolders/${folderId}`, null, 'DELETE');
-        toast(`Folder "${folderName}" deleted`, 'success');
-        if (window.S?.currentFolderId === folderId) {
-          const inbox = window.S.folders?.find(f => f.wellKnown === 'inbox');
-          if (inbox) selectFolderById(inbox.id, inbox.name);
-        }
-        await loadFolders();
-      } catch(e) { toast('Error: ' + e.message, 'error'); }
-      break;
-    }
-
-    case 'create-rule':
-      openCreateRuleDialog({ moveToFolder: folderId, folderName });
-      break;
-  }
+function _injectReadingToolbar7() {
+  const emailView = document.getElementById('email-view');
+  if (!emailView) return;
+  // Remove old static toolbar
+  const old = emailView.querySelector('.reading-toolbar');
+  if (old) old.remove();
+  // Remove any previously injected toolbar
+  document.getElementById('_rt7')?.remove();
+  // Build new toolbar
+  const div = document.createElement('div');
+  div.innerHTML = _buildReadingToolbar(window.S?.selectedMsg);
+  const tb = div.firstElementChild;
+  // Insert before reading-body
+  const body = document.getElementById('reading-body');
+  if (body) emailView.insertBefore(tb, body);
+  else emailView.prepend(tb);
 }
 
-// ═══════════════════════════════════════════════════════════════
-// FIX D: RULES PANE — full working rules display + CRUD
-// ═══════════════════════════════════════════════════════════════
-
-// Override the switchView to properly handle 'rules'
-const __origSwitchView = window.switchView;
-window.switchView = function(view) {
-  if (view === 'rules') {
-    // Hide all panes
-    ['msg-list-panel','reading-pane','contacts-pane','attachments-pane','calendar-pane','groups-pane'].forEach(id => {
-      const el = document.getElementById(id);
-      if (el) el.style.display = 'none';
-    });
-    // Show rules pane
-    const rp = document.getElementById('rules-pane');
-    if (rp) {
-      rp.style.display = 'flex';
-      rp.style.flexDirection = 'column';
-      rp.style.flex = '1';
-      rp.style.overflow = 'hidden';
-    }
-    window.S && (window.S.currentView = 'rules');
-    // Rail highlight
-    document.querySelectorAll('.owa-rail-btn').forEach(b => b.classList.remove('active'));
-    const rb = document.getElementById('rail-rules');
-    if (rb) rb.classList.add('active');
-    // Load rules
-    initRulesPane();
-    return;
-  }
-  if (__origSwitchView) __origSwitchView(view);
-  // Make sure rules pane is hidden when switching away
-  const rp = document.getElementById('rules-pane');
-  if (rp) rp.style.display = 'none';
+// Reading toolbar actions
+window._rt7Delete = function() {
+  if (!window.S?.selectedMsg) { toast('No message open','info'); return; }
+  if (typeof _patchDeleteId === 'function') _patchDeleteId(S.selectedMsg.id);
+  else deleteMsg();
+};
+window._rt7Move = function(e) {
+  if (!window.S?.selectedMsg) { toast('No message open','info'); return; }
+  _showMoveTo7(e, S.selectedMsg.id);
+};
+window._rt7MarkUnread = function() {
+  if (!window.S?.selectedMsg) { toast('No message open','info'); return; }
+  graphPatch(`/me/messages/${S.selectedMsg.id}`, { isRead: false })
+    .then(() => { toast('Marked as unread','success'); const item=document.getElementById('mi-'+S.selectedMsg.id); if(item) item.classList.add('unread'); })
+    .catch(e => toast(e.message,'error'));
+};
+window._rt7Flag = function() {
+  if (!window.S?.selectedMsg) { toast('No message open','info'); return; }
+  const btn = document.getElementById('_rt7-flag');
+  const flagged = btn?.dataset.flagged === '1';
+  graphPatch(`/me/messages/${S.selectedMsg.id}`, { flag: { flagStatus: flagged ? 'notFlagged' : 'flagged' } })
+    .then(() => {
+      const now = !flagged;
+      if (btn) { btn.dataset.flagged = now?'1':'0'; btn.style.color = now ? '#a4262c' : ''; }
+      toast(now ? 'Flagged' : 'Unflagged', 'success');
+    }).catch(e => toast(e.message,'error'));
+};
+window._rt7CreateRule = function() {
+  if (!window.S?.selectedMsg) { toast('No message open','info'); return; }
+  const msg = S.selectedMsg;
+  const from = msg.from?.emailAddress?.address || '';
+  const subj  = msg.subject || '';
+  openCreateRuleDialog7({ fromContains: from, subjectHint: subj, msgId: msg.id });
+};
+window._rt7More = function(e) {
+  if (!window.S?.selectedMsg) { toast('No message open','info'); return; }
+  _showMoreActions7(e, S.selectedMsg.id);
 };
 
-let _rulesInited = false;
-let _inboxRules   = [];
-
-async function initRulesPane() {
-  const pane = document.getElementById('rules-pane');
-  if (!pane) return;
-
-  if (!_rulesInited) {
-    pane.innerHTML = buildRulesPaneHTML();
-    _rulesInited = true;
-  }
-
-  switchRulesTab('inbox');
+function _showMoreActions7(e, msgId) {
+  e.stopPropagation();
+  _closeAllMenus7();
+  const items = [
+    { label:'Print',           fn: () => window.print() },
+    { label:'Save as draft',   fn: () => { if(typeof saveDraft==='function') saveDraft(); } },
+    { label:'Block sender',    fn: () => _blockSender7(msgId) },
+    { label:'Report junk',     fn: () => toast('Reported as junk','info') },
+    { label:'View source',     fn: () => _viewSource7(msgId) },
+  ];
+  _popup7(e.clientX, e.clientY, items);
 }
 
-function buildRulesPaneHTML() {
-  return `
-    <div class="rules-header" style="display:flex;align-items:center;padding:12px 20px;border-bottom:1px solid var(--border-light);gap:8px;flex-shrink:0">
-      <span class="rules-title" style="font-size:15px;font-weight:600;flex:1">Inbox Rules</span>
-      <button class="btn btn-sm btn-ghost" onclick="loadRulesTab()" title="Refresh">
-        <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+function _blockSender7(msgId) {
+  const msg = (window.S?.allMessages||[]).find(m=>m.id===msgId) || window.S?.selectedMsg;
+  if (!msg) return;
+  const addr = msg.from?.emailAddress?.address || '';
+  const name = msg.from?.emailAddress?.name || '';
+  if (!addr) { toast('No sender address','error'); return; }
+  if (!confirm(`Block all email from ${addr}?`)) return;
+  graphPost('/me/inferenceClassification/overrides', {
+    classifyAs: 'other',
+    senderEmailAddress: { address: addr, name }
+  }).then(() => toast(`${addr} blocked`,'success'))
+    .catch(e => toast(e.message,'error'));
+}
+
+function _viewSource7(msgId) {
+  const msg = window.S?.selectedMsg;
+  if (!msg) return;
+  const src = document.getElementById('reading-body')?.innerHTML || '';
+  const w = window.open('','_blank','width=800,height=600');
+  w.document.write(`<pre style="font-size:12px;white-space:pre-wrap;padding:16px">${src.replace(/</g,'&lt;')}</pre>`);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   D. MOVE-TO-FOLDER POPUP — works from toolbar AND context menu
+      Always uses S.selectedMsg; works even when top-bar triggers it
+   ═══════════════════════════════════════════════════════════════ */
+function _showMoveTo7(e, msgId) {
+  e.stopPropagation();
+  _closeAllMenus7();
+  const msg = msgId
+    ? (window.S?.allMessages||[]).find(m=>m.id===msgId) || window.S?.selectedMsg
+    : window.S?.selectedMsg;
+  if (!msg) { toast('No message selected','info'); return; }
+  const targetId = msgId || msg.id;
+
+  const folders = window.S?.folders || [];
+  const search_id = '_mv7-search';
+
+  const menu = document.createElement('div');
+  menu.id = '_mv7-menu';
+  menu.style.cssText = 'position:fixed;z-index:99600;min-width:240px;max-height:380px;overflow:hidden;background:var(--bg-raised);border:1px solid var(--border);border-radius:var(--radius-lg);box-shadow:var(--shadow-xl);display:flex;flex-direction:column';
+
+  menu.innerHTML = `
+    <div style="padding:6px 8px;border-bottom:1px solid var(--border-light);flex-shrink:0">
+      <input id="${search_id}" type="text" placeholder="Search folders…"
+        style="width:100%;padding:5px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px;background:var(--bg-canvas);color:var(--txt);outline:none"
+        oninput="_mv7Filter(this.value)">
+    </div>
+    <div id="_mv7-list" style="overflow-y:auto;flex:1;padding:3px 0">
+      ${folders.map(f=>`
+        <div class="_mv7-item" data-id="${f.id}" data-name="${esc7(f.name.toLowerCase())}"
+          onclick="_mv7Pick('${f.id}','${q(f.name)}','${targetId}')"
+          style="display:flex;align-items:center;gap:8px;padding:6px 12px;cursor:pointer;font-size:12.5px;color:var(--txt-sub)">
+          <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+          ${esc7(f.name)}
+        </div>`).join('')}
+    </div>
+    <div style="border-top:1px solid var(--border-light);flex-shrink:0;padding:3px 0">
+      <div onclick="_mv7NewFolder('${targetId}')"
+        style="display:flex;align-items:center;gap:8px;padding:6px 12px;cursor:pointer;font-size:12.5px;color:var(--acc)">
+        <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        New folder…
+      </div>
+    </div>`;
+
+  document.body.appendChild(menu);
+  _posMenu7(menu, e.clientX, e.clientY);
+  setTimeout(() => {
+    document.getElementById(search_id)?.focus();
+    document.addEventListener('mousedown', _mv7Close, {once:true});
+  }, 0);
+
+  // hover style
+  menu.querySelectorAll('._mv7-item').forEach(el => {
+    el.addEventListener('mouseover', () => { el.style.background='var(--neutral-lighter)'; el.style.color='var(--txt)'; });
+    el.addEventListener('mouseout',  () => { el.style.background=''; el.style.color='var(--txt-sub)'; });
+  });
+}
+
+function _mv7Close() { document.getElementById('_mv7-menu')?.remove(); }
+window._mv7Filter = function(q) {
+  document.querySelectorAll('._mv7-item').forEach(el => {
+    el.style.display = el.dataset.name.includes(q.toLowerCase()) ? '' : 'none';
+  });
+};
+window._mv7Pick = async function(folderId, folderName, msgId) {
+  _mv7Close();
+  try {
+    await graphPost(`/me/messages/${msgId}/move`, { destinationId: folderId });
+    // optimistic remove from list
+    if (typeof _optimisticRemove === 'function') _optimisticRemove(msgId);
+    else { const it=document.getElementById('mi-'+msgId); if(it) it.remove(); }
+    toast(`Moved to ${folderName}`, 'success');
+    loadFolderCounts?.();
+  } catch(ex) { toast(ex.message, 'error'); }
+};
+window._mv7NewFolder = async function(msgId) {
+  _mv7Close();
+  const name = prompt('New folder name:');
+  if (!name?.trim()) return;
+  try {
+    const res = await graphPost('/me/mailFolders', { displayName: name.trim() });
+    toast(`Folder "${name.trim()}" created`, 'success');
+    await _mv7Pick(res.id, name.trim(), msgId);
+    loadFolders?.();
+  } catch(e) { toast(e.message, 'error'); }
+};
+
+// Override legacy showMoveToMenu so ribbon button and ctx menu both use this
+window.showMoveToMenu = function(e) { _showMoveTo7(e, window.S?.selectedMsg?.id); };
+window.ctxMove = function(e) { _showMoveTo7(e, window._ctxMsgId || window.S?.selectedMsg?.id); };
+
+/* ═══════════════════════════════════════════════════════════════
+   E. CONTEXT MENU — fix sub-items (Move, Flag, Categorise etc.)
+      Replace all stub items with real implementations.
+      Also override buildCtxMenuHtml entirely.
+   ═══════════════════════════════════════════════════════════════ */
+function _closeAllMenus7() {
+  document.getElementById('_mv7-menu')?.remove();
+  document.getElementById('_popup7')?.remove();
+  document.getElementById('_folder-ctx-menu')?.remove();
+}
+
+function _popup7(cx, cy, items) {
+  document.getElementById('_popup7')?.remove();
+  const m = document.createElement('div');
+  m.id = '_popup7';
+  m.style.cssText = 'position:fixed;z-index:99700;background:var(--bg-raised);border:1px solid var(--border);border-radius:var(--radius-lg);padding:4px 0;min-width:200px;box-shadow:var(--shadow-xl);animation:_p7in .1s ease';
+  m.innerHTML = items.map(it => it.sep
+    ? `<div style="height:1px;background:var(--border-light);margin:3px 0"></div>`
+    : `<div class="_p7item" onclick="_p7act(${items.indexOf(it)})"
+        style="display:flex;align-items:center;gap:9px;padding:7px 14px;cursor:pointer;font-size:12.5px;color:var(--txt-sub);white-space:nowrap">
+         ${it.icon?`<svg width="14" height="14" viewBox="0 0 24 24">${it.icon}</svg>`:'<span style="width:14px"></span>'}
+         <span style="flex:1">${it.label}</span>
+       </div>`
+  ).join('');
+  document.body.appendChild(m);
+  _posMenu7(m, cx, cy);
+  // store actions
+  m._actions = items.map(it=>it.fn);
+  m.querySelectorAll('._p7item').forEach((el,i) => {
+    el.addEventListener('mouseover', () => { el.style.background='var(--neutral-lighter)'; el.style.color='var(--txt)'; });
+    el.addEventListener('mouseout',  () => { el.style.background=''; el.style.color='var(--txt-sub)'; });
+  });
+  setTimeout(() => document.addEventListener('mousedown', () => m.remove(), {once:true}), 0);
+}
+window._p7act = function(i) {
+  const m = document.getElementById('_popup7');
+  if (!m) return;
+  const fn = m._actions[i];
+  m.remove();
+  if (fn) fn();
+};
+
+function _posMenu7(el, cx, cy) {
+  el.style.left = px(cx); el.style.top = px(cy);
+  requestAnimationFrame(() => {
+    const r = el.getBoundingClientRect();
+    if (r.right  > window.innerWidth  - 8) el.style.left = px(cx - r.width);
+    if (r.bottom > window.innerHeight - 8) el.style.top  = px(cy - r.height);
+  });
+}
+
+// Full replacement context menu — no more stub sub-items
+window.buildCtxMenuHtml = function(cx, cy, msgId) {
+  // Return minimal placeholder; showCtxMenu7 handles everything
+  return '';
+};
+
+window.showCtxMenu = function(e, msgId) {
+  e.preventDefault(); e.stopPropagation();
+  _closeAllMenus7();
+  window._ctxMsgId = msgId;
+  if (window.selectMsgForCtx) window.selectMsgForCtx(msgId);
+
+  const items = [
+    { label:'Reply',          fn: () => replyTo(),      icon:`<polyline points="9 17 4 12 9 7" stroke="currentColor" fill="none" stroke-width="2"/><path d="M20 18v-2a4 4 0 0 0-4-4H4" stroke="currentColor" fill="none" stroke-width="2"/>` },
+    { label:'Reply all',      fn: () => replyAll(),     icon:`<polyline points="7 17 2 12 7 7" stroke="currentColor" fill="none" stroke-width="2"/><polyline points="12 17 7 12 12 7" stroke="currentColor" fill="none" stroke-width="2"/><path d="M22 18v-2a4 4 0 0 0-4-4H7" stroke="currentColor" fill="none" stroke-width="2"/>` },
+    { label:'Forward',        fn: () => forwardMsg(),   icon:`<polyline points="15 17 20 12 15 7" stroke="currentColor" fill="none" stroke-width="2"/><path d="M4 18v-2a4 4 0 0 1 4-4h12" stroke="currentColor" fill="none" stroke-width="2"/>` },
+    { sep:true },
+    { label:'Delete',         fn: () => { if(typeof _patchDeleteId==='function') _patchDeleteId(msgId); else deleteMsg(); }, icon:`<polyline points="3 6 5 6 21 6" stroke="currentColor" fill="none" stroke-width="2"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" stroke="currentColor" fill="none" stroke-width="2"/>` },
+    { label:'Archive',        fn: () => archiveMsg(),   icon:`<polyline points="21 8 21 21 3 21 3 8" stroke="currentColor" fill="none" stroke-width="2"/><rect x="1" y="3" width="22" height="5" stroke="currentColor" fill="none" stroke-width="2"/><line x1="10" y1="12" x2="14" y2="12" stroke="currentColor" stroke-width="2"/>` },
+    { label:'Move to folder…',fn: (ev) => _showMoveTo7(ev||e, msgId), icon:`<path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" stroke="currentColor" fill="none" stroke-width="2"/>` },
+    { sep:true },
+    { label:'Mark as unread', fn: () => { graphPatch(`/me/messages/${msgId}`,{isRead:false}).then(()=>{toast('Marked unread','success');document.getElementById('mi-'+msgId)?.classList.add('unread');}).catch(e=>toast(e.message,'error')); }, icon:`<path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" stroke="currentColor" fill="none" stroke-width="2"/><polyline points="22,6 12,13 2,6" stroke="currentColor" fill="none" stroke-width="2"/>` },
+    { label:'Flag',           fn: () => { graphPatch(`/me/messages/${msgId}`,{flag:{flagStatus:'flagged'}}).then(()=>toast('Flagged','success')).catch(e=>toast(e.message,'error')); }, icon:`<path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z" stroke="currentColor" fill="none" stroke-width="2"/><line x1="4" y1="22" x2="4" y2="15" stroke="currentColor" stroke-width="2"/>` },
+    { label:'Create rule…',   fn: () => { const msg=(window.S?.allMessages||[]).find(m=>m.id===msgId)||window.S?.selectedMsg; openCreateRuleDialog7({fromContains:msg?.from?.emailAddress?.address||'',msgId}); }, icon:`<line x1="8" y1="6" x2="21" y2="6" stroke="currentColor" stroke-width="2"/><line x1="8" y1="12" x2="21" y2="12" stroke="currentColor" stroke-width="2"/><line x1="8" y1="18" x2="21" y2="18" stroke="currentColor" stroke-width="2"/><line x1="3" y1="6" x2="3.01" y2="6" stroke="currentColor" stroke-width="2"/><line x1="3" y1="12" x2="3.01" y2="12" stroke="currentColor" stroke-width="2"/><line x1="3" y1="18" x2="3.01" y2="18" stroke="currentColor" stroke-width="2"/>` },
+    { sep:true },
+    { label:'Block sender',   fn: () => _blockSender7(msgId), icon:`<circle cx="12" cy="12" r="10" stroke="currentColor" fill="none" stroke-width="2"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07" stroke="currentColor" stroke-width="2"/>` },
+    { label:'Print',          fn: () => window.print(), icon:'' },
+  ];
+
+  _popup7(e.clientX, e.clientY, items);
+};
+
+/* ═══════════════════════════════════════════════════════════════
+   F. FOLDER SIDEBAR — right-click menu + rule icon per folder
+   ═══════════════════════════════════════════════════════════════ */
+
+// Patch renderFolderNodes to inject rule icon button
+const _origRFN = window.renderFolderNodes;
+if (_origRFN) {
+  window.renderFolderNodes = function(nodes) {
+    let html = _origRFN(nodes);
+    // After render, attach rule icons via DOM (done in wireFolderRuleIcons)
+    setTimeout(wireFolderRuleIcons, 0);
+    return html;
+  };
+}
+
+function wireFolderRuleIcons() {
+  document.querySelectorAll('.fi').forEach(fi => {
+    if (fi.querySelector('._fi-rule-btn')) return;
+    const fid = fi.id.replace('fi-', '');
+    if (!fid) return;
+    const btn = document.createElement('button');
+    btn.className = '_fi-rule-btn';
+    btn.title = 'Rules & policies for this folder';
+    btn.style.cssText = 'width:18px;height:18px;border:none;background:transparent;cursor:pointer;opacity:0;transition:opacity .15s;flex-shrink:0;display:flex;align-items:center;justify-content:center;color:var(--txt-hint);padding:0;border-radius:3px';
+    btn.innerHTML = `<svg width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>`;
+    btn.setAttribute('data-fid', fid);
+    btn.addEventListener('click', ev => {
+      ev.stopPropagation();
+      const node = window.S?.folderMap?.[fid];
+      const name = node?.name || fi.querySelector('.fi-name')?.textContent?.trim() || fid;
+      _showFolderRulesMenu7(ev.clientX, ev.clientY, fid, name);
+    });
+    // Show on hover
+    fi.addEventListener('mouseenter', () => btn.style.opacity = '1');
+    fi.addEventListener('mouseleave', () => btn.style.opacity = '0');
+    // Insert before badge
+    const badge = fi.querySelector('.badge');
+    if (badge) fi.insertBefore(btn, badge);
+    else fi.appendChild(btn);
+  });
+}
+
+function _showFolderRulesMenu7(cx, cy, folderId, folderName) {
+  _closeAllMenus7();
+  const node = window.S?.folderMap?.[folderId];
+  const isSystem = node?.wellKnown && ['inbox','sentitems','deleteditems','drafts','junkemail','archive','outbox'].includes(node.wellKnown);
+
+  const items = [
+    { label:`Rules for "${folderName}"`, fn: null, icon:'' }, // header-ish
+    { sep:true },
+    { label:'New rule → move here',   fn: () => openCreateRuleDialog7({ moveToFolder: folderId, folderName }), icon:`<line x1="12" y1="5" x2="12" y2="19" stroke="currentColor" stroke-width="2"/><line x1="5" y1="12" x2="19" y2="12" stroke="currentColor" stroke-width="2"/>` },
+    { label:'Block senders to here',  fn: () => _showBlockSenderDialog7(folderId, folderName), icon:`<circle cx="12" cy="12" r="10" stroke="currentColor" fill="none" stroke-width="2"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07" stroke="currentColor" stroke-width="2"/>` },
+    { label:'View all inbox rules',   fn: () => switchView('rules'), icon:`<line x1="8" y1="6" x2="21" y2="6" stroke="currentColor" stroke-width="2"/><line x1="8" y1="12" x2="21" y2="12" stroke="currentColor" stroke-width="2"/><line x1="8" y1="18" x2="21" y2="18" stroke="currentColor" stroke-width="2"/>` },
+    { sep:true },
+    { label:'New subfolder',          fn: () => _folderAction7('new-sub', folderId, folderName), icon:`<path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" stroke="currentColor" fill="none" stroke-width="2"/><line x1="12" y1="11" x2="12" y2="17" stroke="currentColor" stroke-width="2"/><line x1="9" y1="14" x2="15" y2="14" stroke="currentColor" stroke-width="2"/>` },
+    { label:'Rename',                 fn: () => _folderAction7('rename', folderId, folderName), icon:`<path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" stroke="currentColor" fill="none" stroke-width="2"/>` },
+    { label:'Mark all as read',       fn: () => _folderAction7('mark-read', folderId, folderName), icon:`<polyline points="20 6 9 17 4 12" stroke="currentColor" fill="none" stroke-width="2"/>` },
+    { label:'Empty folder',           fn: () => _folderAction7('empty', folderId, folderName), icon:`<polyline points="3 6 5 6 21 6" stroke="currentColor" fill="none" stroke-width="2"/><path d="M19 6l-1 14H6L5 6" stroke="currentColor" fill="none" stroke-width="2"/>` },
+    ...(!isSystem ? [
+      { sep:true },
+      { label:'Delete folder',        fn: () => _folderAction7('delete', folderId, folderName), icon:`<polyline points="3 6 5 6 21 6" stroke="currentColor" fill="none" stroke-width="2"/><path d="M19 6l-1 14H6L5 6" stroke="currentColor" fill="none" stroke-width="2"/>` },
+    ] : []),
+  ];
+
+  _popup7(cx, cy, items);
+}
+
+// Folder right-click → same menu
+document.addEventListener('contextmenu', ev => {
+  const fi = ev.target.closest('.fi');
+  if (!fi) return;
+  ev.preventDefault(); ev.stopPropagation();
+  const fid = fi.id.replace('fi-', '');
+  if (!fid) return;
+  const node = window.S?.folderMap?.[fid];
+  const name = node?.name || fi.querySelector('.fi-name')?.textContent?.trim() || fid;
+  _showFolderRulesMenu7(ev.clientX, ev.clientY, fid, name);
+}, true);
+
+/* folder actions */
+async function _folderAction7(action, folderId, folderName) {
+  switch(action) {
+    case 'new-sub': {
+      const nm = prompt(`New subfolder inside "${folderName}":`, '');
+      if (!nm?.trim()) return;
+      try { await graphPost(`/me/mailFolders/${folderId}/childFolders`,{displayName:nm.trim()}); toast(`"${nm.trim()}" created`,'success'); loadFolders?.(); } catch(e) { toast(e.message,'error'); }
+      break;
+    }
+    case 'rename': {
+      const nm = prompt(`Rename "${folderName}" to:`, folderName);
+      if (!nm?.trim() || nm.trim()===folderName) return;
+      try { await graphPatch(`/me/mailFolders/${folderId}`,{displayName:nm.trim()}); toast(`Renamed to "${nm.trim()}"`,'success'); loadFolders?.(); } catch(e) { toast(e.message,'error'); }
+      break;
+    }
+    case 'mark-read': {
+      toast('Marking all as read…','info');
+      let skip=0, total=0;
+      try {
+        while(true) {
+          const res=await graphGet(`/me/mailFolders/${folderId}/messages?$filter=isRead eq false&$top=50&$skip=${skip}&$select=id`);
+          const msgs=res.value||[];
+          if(!msgs.length) break;
+          await Promise.all(msgs.map(m=>graphPatch(`/me/messages/${m.id}`,{isRead:true})));
+          total+=msgs.length; if(!res['@odata.nextLink']) break; skip+=50;
+        }
+        toast(`${total} messages marked read`,'success'); loadFolderCounts?.();
+        if(window.S?.currentFolderId===folderId) refreshFolder?.();
+      } catch(e) { toast(e.message,'error'); }
+      break;
+    }
+    case 'empty': {
+      if(!confirm(`Empty "${folderName}"? Messages move to Deleted Items.`)) return;
+      const trashId=(window.S?.folders||[]).find(f=>f.wellKnown==='deleteditems')?.id||'deleteditems';
+      let cnt=0;
+      try {
+        while(true){const res=await graphGet(`/me/mailFolders/${folderId}/messages?$top=50&$select=id`);const ms=res.value||[];if(!ms.length)break;await Promise.all(ms.map(m=>graphPost(`/me/messages/${m.id}/move`,{destinationId:trashId})));cnt+=ms.length;}
+        toast(`${cnt} messages moved to Deleted Items`,'success'); loadFolderCounts?.();
+        if(window.S?.currentFolderId===folderId) refreshFolder?.();
+      } catch(e) { toast(e.message,'error'); }
+      break;
+    }
+    case 'delete': {
+      if(!confirm(`Delete folder "${folderName}" and all its contents?`)) return;
+      try {
+        const res=await fetch('https://graph.microsoft.com/v1.0/me/mailFolders/'+folderId,{method:'DELETE',headers:{Authorization:'Bearer '+(window.S?.accessToken||'')}});
+        if(!res.ok) throw new Error('HTTP '+res.status);
+        toast(`"${folderName}" deleted`,'success');
+        if(window.S?.currentFolderId===folderId){const ib=(window.S?.folders||[]).find(f=>f.wellKnown==='inbox');if(ib)selectFolderById?.(ib.id,ib.name);}
+        loadFolders?.();
+      } catch(e) { toast(e.message,'error'); }
+      break;
+    }
+  }
+}
+
+function _showBlockSenderDialog7(folderId, folderName) {
+  const addr = prompt(`Block sender address (emails will move to "${folderName}"):`,'');
+  if (!addr?.trim()) return;
+  graphPost('/me/inferenceClassification/overrides',{classifyAs:'other',senderEmailAddress:{address:addr.trim()}})
+    .then(()=>toast(`${addr.trim()} blocked`,'success'))
+    .catch(e=>toast(e.message,'error'));
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   G. RULES PANE — definitive fix.
+      Single clean override of switchView; no prior patches can
+      interfere because we wrap the final resolved function.
+   ═══════════════════════════════════════════════════════════════ */
+let _rulesReady = false;
+let _inboxRules7 = [];
+
+// We intentionally wait for DOMContentLoaded + a tick so all prior
+// switchView overrides have settled, then do one final wrap.
+domReady(() => setTimeout(() => {
+  const _base = window.switchView;
+  window.switchView = function(view) {
+    if (view === 'rules') {
+      _rulesShowPane7();
+      return;
+    }
+    _rulesHidePane7();
+    if (_base) _base(view);
+  };
+}, 200));
+
+function _rulesShowPane7() {
+  // Hide every other major pane
+  ['msg-list-panel','reading-pane','contacts-pane','attachments-pane','calendar-pane','groups-pane'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = 'none';
+  });
+  // Show rules pane
+  const rp = document.getElementById('rules-pane');
+  if (rp) { rp.style.cssText = 'display:flex;flex-direction:column;flex:1;overflow:hidden'; }
+  // Rail highlight
+  document.querySelectorAll('.owa-rail-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('rail-rules')?.classList.add('active');
+  if (window.S) window.S.currentView = 'rules';
+  // Build & load
+  _buildRulesPane7();
+  _loadRulesTab7('inbox');
+}
+
+function _rulesHidePane7() {
+  const rp = document.getElementById('rules-pane');
+  if (rp) rp.style.display = 'none';
+}
+
+function _buildRulesPane7() {
+  const rp = document.getElementById('rules-pane');
+  if (!rp) return;
+  if (_rulesReady) return;
+  _rulesReady = true;
+
+  rp.innerHTML = `
+    <div style="display:flex;align-items:center;padding:10px 18px;border-bottom:1px solid var(--border-light);flex-shrink:0;gap:8px">
+      <span style="font-size:15px;font-weight:700;flex:1;color:var(--txt)">Rules &amp; policies</span>
+      <button class="btn btn-sm btn-ghost" onclick="_loadRulesTab7(window._rt7Tab||'inbox')" title="Refresh">
+        <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
         Refresh
       </button>
-      <button class="btn btn-sm btn-primary" onclick="openCreateRuleDialog({})" style="display:flex;align-items:center;gap:5px">
-        <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      <button class="btn btn-sm btn-primary" onclick="openCreateRuleDialog7({})" style="display:flex;align-items:center;gap:5px">
+        <svg width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
         New rule
       </button>
     </div>
-    <div id="_rules-tab-bar" style="display:flex;border-bottom:1px solid var(--border-light);padding:0 16px;flex-shrink:0">
-      ${['inbox','blocked','safe'].map((t,i) => `
-        <button class="_rtab ${i===0?'active':''}" data-tab="${t}" onclick="switchRulesTab('${t}')"
-          style="padding:8px 14px;border:none;background:transparent;cursor:pointer;font-size:12.5px;
-                 color:var(--txt-muted);border-bottom:2px solid transparent;margin-bottom:-1px;transition:all .12s">
-          ${t.charAt(0).toUpperCase()+t.slice(1)} rules
+    <div id="_rt7-tabs" style="display:flex;border-bottom:1px solid var(--border-light);padding:0 12px;flex-shrink:0">
+      ${[['inbox','Inbox rules'],['blocked','Blocked senders'],['safe','Safe senders']].map(([t,l],i)=>`
+        <button data-t="${t}" onclick="_switchRulesTab7('${t}')"
+          style="padding:8px 12px;border:none;background:transparent;cursor:pointer;font-size:12.5px;
+                 color:${i===0?'var(--acc)':'var(--txt-muted)'};font-weight:${i===0?600:400};
+                 border-bottom:2px solid ${i===0?'var(--acc)':'transparent'};margin-bottom:-1px;transition:all .12s">
+          ${l}
         </button>`).join('')}
     </div>
-    <div id="_rules-content" style="flex:1;overflow-y:auto;padding:0"></div>
+    <div id="_rt7-content" style="flex:1;overflow-y:auto"></div>
   `;
 }
 
-function switchRulesTab(tab) {
-  document.querySelectorAll('._rtab').forEach(b => {
-    const active = b.dataset.tab === tab;
-    b.classList.toggle('active', active);
-    b.style.color = active ? 'var(--acc)' : 'var(--txt-muted)';
-    b.style.borderBottomColor = active ? 'var(--acc)' : 'transparent';
-    b.style.fontWeight = active ? '600' : '400';
+window._switchRulesTab7 = function(tab) {
+  window._rt7Tab = tab;
+  document.querySelectorAll('#_rt7-tabs button').forEach(b => {
+    const on = b.dataset.t === tab;
+    b.style.color = on ? 'var(--acc)' : 'var(--txt-muted)';
+    b.style.fontWeight = on ? '600' : '400';
+    b.style.borderBottomColor = on ? 'var(--acc)' : 'transparent';
   });
-  window._rulesCurrentTab = tab;
-  loadRulesTab(tab);
-}
-window.switchRulesTab = switchRulesTab;
+  _loadRulesTab7(tab);
+};
 
-async function loadRulesTab(tab) {
-  tab = tab || window._rulesCurrentTab || 'inbox';
-  const content = document.getElementById('_rules-content');
-  if (!content) return;
-
-  content.innerHTML = `<div style="padding:40px;text-align:center;color:var(--txt-muted);font-size:13px">
-    <div style="margin-bottom:12px">⏳</div>Loading ${tab} rules…</div>`;
+window._loadRulesTab7 = async function(tab) {
+  tab = tab || 'inbox';
+  window._rt7Tab = tab;
+  const el = document.getElementById('_rt7-content');
+  if (!el) return;
+  el.innerHTML = `<div style="padding:48px;text-align:center;color:var(--txt-muted)"><svg width="32" height="32" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24" style="animation:spin7 1s linear infinite"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg><div style="margin-top:12px;font-size:13px">Loading ${tab} rules…</div></div>`;
 
   try {
     if (tab === 'inbox') {
       const res = await graphGet('/me/mailFolders/inbox/messageRules');
-      _inboxRules = res.value || [];
-      renderInboxRules(_inboxRules, content);
+      _inboxRules7 = res.value || [];
+      el.innerHTML = _renderInboxRules7(_inboxRules7);
     } else if (tab === 'blocked') {
       const res = await graphGet('/me/inferenceClassification/overrides');
-      const blocked = (res.value || []).filter(o => o.classifyAs === 'focused' || o.classifyAs === 'other');
-      renderBlockedSenders(blocked, content);
+      el.innerHTML = _renderOverrides7(res.value || []);
     } else if (tab === 'safe') {
-      content.innerHTML = renderEmptyTab('Safe senders', 'Emails from safe senders are never moved to Junk.');
+      el.innerHTML = `<div style="padding:60px 24px;text-align:center"><div style="font-size:36px;margin-bottom:12px">✅</div><div style="font-size:14px;font-weight:600;color:var(--txt)">Safe senders</div><div style="font-size:12.5px;color:var(--txt-muted);margin-top:6px">Email from safe senders never goes to Junk. Add via the block dialog.</div></div>`;
     }
-  } catch(e) {
-    const isScope = e.message && e.message.includes('403');
-    content.innerHTML = `
-      <div style="padding:32px;text-align:center">
-        <div style="font-size:36px;margin-bottom:12px">${isScope?'🔒':'⚠️'}</div>
-        <div style="font-size:14px;font-weight:600;color:var(--txt);margin-bottom:8px">
-          ${isScope ? 'Permission required' : 'Could not load rules'}
-        </div>
-        <div style="font-size:12px;color:var(--txt-muted);margin-bottom:16px">${esc(e.message)}</div>
-        <button class="btn btn-sm btn-primary" onclick="loadRulesTab()">Try again</button>
-      </div>`;
+  } catch(err) {
+    const scope = err.message?.includes('403') || err.message?.includes('insufficient');
+    el.innerHTML = `<div style="padding:48px 24px;text-align:center">
+      <div style="font-size:40px;margin-bottom:12px">${scope?'🔒':'⚠️'}</div>
+      <div style="font-size:14px;font-weight:600;color:var(--txt);margin-bottom:8px">${scope?'Permission required':'Could not load rules'}</div>
+      <div style="font-size:12px;color:var(--txt-muted);margin-bottom:16px;max-width:360px;margin-inline:auto">${esc7(err.message)}</div>
+      <button class="btn btn-sm btn-primary" onclick="_loadRulesTab7('${tab}')">Try again</button>
+    </div>`;
   }
-}
-window.loadRulesTab = loadRulesTab;
+};
 
-function renderInboxRules(rules, container) {
-  if (!rules.length) {
-    container.innerHTML = renderEmptyTab('No inbox rules', 'Create a rule to automatically organise your email.');
-    return;
-  }
-  container.innerHTML = rules.map((rule, i) => {
-    const conds = formatConditions(rule.conditions);
-    const acts  = formatActions(rule.actions);
-    const enabled = rule.isEnabled !== false;
-    return `
-      <div class="_rule-row" style="padding:14px 20px;border-bottom:1px solid var(--border-light);display:flex;align-items:flex-start;gap:12px">
-        <div style="flex-shrink:0;padding-top:2px">
-          <input type="checkbox" ${enabled?'checked':''} title="${enabled?'Disable':'Enable'} rule"
-            onchange="toggleRule('${rule.id}',this.checked)"
-            style="accent-color:var(--acc);width:14px;height:14px;cursor:pointer">
+function _renderInboxRules7(rules) {
+  if (!rules.length) return `<div style="padding:60px 24px;text-align:center"><div style="font-size:40px;margin-bottom:12px">📋</div><div style="font-size:14px;font-weight:600;color:var(--txt)">No inbox rules yet</div><div style="font-size:12.5px;color:var(--txt-muted);margin:6px 0 16px">Rules run automatically on incoming messages.</div><button class="btn btn-sm btn-primary" onclick="openCreateRuleDialog7({})">Create your first rule</button></div>`;
+  return rules.map(rule => {
+    const on = rule.isEnabled !== false;
+    const conds = _fmtCond7(rule.conditions);
+    const acts  = _fmtActs7(rule.actions);
+    return `<div style="padding:12px 18px;border-bottom:1px solid var(--border-light);display:flex;align-items:flex-start;gap:12px">
+      <input type="checkbox" ${on?'checked':''} title="${on?'Disable':'Enable'}"
+        onchange="_toggleRule7('${rule.id}',this.checked)"
+        style="accent-color:var(--acc);width:14px;height:14px;cursor:pointer;flex-shrink:0;margin-top:3px">
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13px;font-weight:600;color:var(--txt);margin-bottom:3px;display:flex;align-items:center;gap:6px">
+          ${esc7(rule.displayName||'Untitled rule')}
+          ${!on?`<span style="font-size:10px;color:var(--txt-hint);background:var(--neutral-light);padding:1px 6px;border-radius:3px">Off</span>`:''}
+          <span style="font-size:10px;color:var(--txt-hint)">seq ${rule.sequence||0}</span>
         </div>
-        <div style="flex:1;min-width:0">
-          <div style="font-size:13px;font-weight:600;color:var(--txt);margin-bottom:4px;display:flex;align-items:center;gap:8px">
-            ${esc(rule.displayName || 'Untitled rule')}
-            ${!enabled?'<span style="font-size:10px;color:var(--txt-hint);background:var(--neutral-light);padding:1px 6px;border-radius:3px">Disabled</span>':''}
-          </div>
-          <div style="font-size:12px;color:var(--txt-muted);margin-bottom:2px"><b>When:</b> ${conds||'(any message)'}</div>
-          <div style="font-size:12px;color:var(--txt-muted)"><b>Do:</b> ${acts||'(no action)'}</div>
-        </div>
-        <div style="display:flex;gap:4px;flex-shrink:0">
-          <button class="icon-btn" title="Edit rule" onclick="openEditRuleDialog('${rule.id}')">
-            <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>
-          </button>
-          <button class="icon-btn" title="Delete rule" onclick="deleteRule('${rule.id}')" style="color:var(--red)">
-            <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/></svg>
-          </button>
-        </div>
-      </div>`;
+        ${conds?`<div style="font-size:12px;color:var(--txt-muted);margin-bottom:1px"><b>When:</b> ${esc7(conds)}</div>`:''}
+        ${acts ?`<div style="font-size:12px;color:var(--txt-muted)"><b>Do:</b> ${esc7(acts)}</div>`:''}
+      </div>
+      <div style="display:flex;gap:3px;flex-shrink:0">
+        <button class="icon-btn" title="Edit" onclick="_editRule7('${rule.id}')"><svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg></button>
+        <button class="icon-btn" title="Delete" style="color:var(--red)" onclick="_deleteRule7('${rule.id}')"><svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/></svg></button>
+      </div>
+    </div>`;
   }).join('');
 }
 
-function renderBlockedSenders(overrides, container) {
-  if (!overrides.length) {
-    container.innerHTML = renderEmptyTab('No blocked senders', 'Block a sender to move their email to Junk.');
-    return;
-  }
-  container.innerHTML = `<div style="padding:12px 20px;font-size:12px;color:var(--txt-muted)">
-    ${overrides.length} override${overrides.length!==1?'s':''}</div>` +
-    overrides.map(o => `
-      <div style="padding:10px 20px;border-bottom:1px solid var(--border-light);display:flex;align-items:center;gap:10px">
-        <div style="width:28px;height:28px;border-radius:50%;background:${avatarColor(o.senderEmailAddress?.address||'')};
-                    display:flex;align-items:center;justify-content:center;font-size:11px;color:#fff;flex-shrink:0">
-          ${initials(o.senderEmailAddress?.name||o.senderEmailAddress?.address||'?')}
-        </div>
-        <div style="flex:1;min-width:0">
-          <div style="font-size:13px;color:var(--txt);font-weight:500">${esc(o.senderEmailAddress?.name||'')}</div>
-          <div style="font-size:11.5px;color:var(--txt-muted)">${esc(o.senderEmailAddress?.address||'')}</div>
-        </div>
-        <span style="font-size:10px;background:${o.classifyAs==='focused'?'var(--blue-light)':'var(--red-light)'};
-              color:${o.classifyAs==='focused'?'var(--blue)':'var(--red)'};padding:2px 7px;border-radius:3px">
-          ${o.classifyAs}
-        </span>
-      </div>`).join('');
+function _renderOverrides7(ovs) {
+  if (!ovs.length) return `<div style="padding:60px 24px;text-align:center"><div style="font-size:40px;margin-bottom:12px">🚫</div><div style="font-size:14px;font-weight:600;color:var(--txt)">No blocked senders</div><div style="font-size:12.5px;color:var(--txt-muted);margin:6px 0 16px">Block a sender from the right-click menu on a message.</div></div>`;
+  return ovs.map(o => {
+    const addr = o.senderEmailAddress?.address||'';
+    const nm   = o.senderEmailAddress?.name||'';
+    return `<div style="padding:10px 18px;border-bottom:1px solid var(--border-light);display:flex;align-items:center;gap:10px">
+      <div style="width:30px;height:30px;border-radius:50%;background:${avatarColor(addr)};display:flex;align-items:center;justify-content:center;font-size:11px;color:#fff;flex-shrink:0">${initials(nm||addr)}</div>
+      <div style="flex:1;min-width:0">
+        ${nm?`<div style="font-size:13px;font-weight:500;color:var(--txt)">${esc7(nm)}</div>`:''}
+        <div style="font-size:11.5px;color:var(--txt-muted)">${esc7(addr)}</div>
+      </div>
+      <span style="font-size:10px;padding:2px 7px;border-radius:3px;background:${o.classifyAs==='other'?'var(--red-light)':'var(--blue-light)'};color:${o.classifyAs==='other'?'var(--red)':'var(--blue)'}">
+        ${o.classifyAs==='other'?'Blocked':'Focused'}
+      </span>
+      <button class="icon-btn" title="Remove" style="color:var(--red)" onclick="_removeOverride7('${o.id}')">
+        <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>`;
+  }).join('');
 }
 
-function renderEmptyTab(title, subtitle) {
-  return `<div style="padding:60px 24px;text-align:center">
-    <div style="font-size:40px;margin-bottom:12px">📋</div>
-    <div style="font-size:14px;font-weight:600;color:var(--txt);margin-bottom:6px">${title}</div>
-    <div style="font-size:12.5px;color:var(--txt-muted);margin-bottom:20px">${subtitle}</div>
-    <button class="btn btn-sm btn-primary" onclick="openCreateRuleDialog({})">Create rule</button>
-  </div>`;
-}
-
-function formatConditions(c) {
+function _fmtCond7(c) {
   if (!c) return '';
-  const parts = [];
-  if (c.senderContains?.length)    parts.push('From contains: ' + c.senderContains.join(', '));
-  if (c.fromAddresses?.length)     parts.push('From: ' + c.fromAddresses.map(a=>a.emailAddress?.address||a).join(', '));
-  if (c.subjectContains?.length)   parts.push('Subject contains: ' + c.subjectContains.join(', '));
-  if (c.bodyContains?.length)      parts.push('Body contains: ' + c.bodyContains.join(', '));
-  if (c.hasAttachments)            parts.push('Has attachments');
-  if (c.isImportant)               parts.push('Is important');
-  return parts.join(' AND ') || '';
+  const p = [];
+  if (c.senderContains?.length)  p.push('From contains: '+c.senderContains.join(', '));
+  if (c.fromAddresses?.length)   p.push('From: '+c.fromAddresses.map(a=>a.emailAddress?.address||a).join(', '));
+  if (c.subjectContains?.length) p.push('Subject: '+c.subjectContains.join(', '));
+  if (c.bodyContains?.length)    p.push('Body: '+c.bodyContains.join(', '));
+  if (c.hasAttachments)          p.push('Has attachments');
+  if (c.isImportant)             p.push('Marked important');
+  return p.join(' AND ');
 }
-
-function formatActions(a) {
+function _fmtActs7(a) {
   if (!a) return '';
-  const parts = [];
-  if (a.moveToFolder)     parts.push('Move to folder');
-  if (a.copyToFolder)     parts.push('Copy to folder');
-  if (a.delete)           parts.push('Delete');
-  if (a.permanentDelete)  parts.push('Permanently delete');
-  if (a.markAsRead)       parts.push('Mark as read');
-  if (a.markImportance)   parts.push('Mark as ' + a.markImportance);
-  if (a.forwardTo?.length)       parts.push('Forward to ' + a.forwardTo.map(r=>r.emailAddress?.address||r).join(', '));
-  if (a.redirectTo?.length)      parts.push('Redirect to ' + a.redirectTo.map(r=>r.emailAddress?.address||r).join(', '));
-  if (a.stopProcessingRules)     parts.push('Stop processing rules');
-  return parts.join(', ') || '';
+  const p = [];
+  if (a.moveToFolder)    { const f=(window.S?.folderMap||{})[a.moveToFolder]; p.push('Move to '+(f?.name||a.moveToFolder)); }
+  if (a.copyToFolder)    { const f=(window.S?.folderMap||{})[a.copyToFolder]; p.push('Copy to '+(f?.name||a.copyToFolder)); }
+  if (a.delete)          p.push('Delete');
+  if (a.permanentDelete) p.push('Permanently delete');
+  if (a.markAsRead)      p.push('Mark as read');
+  if (a.markImportance)  p.push('Mark '+a.markImportance);
+  if (a.forwardTo?.length) p.push('Forward to '+a.forwardTo.map(r=>r.emailAddress?.address||r).join(', '));
+  if (a.stopProcessingRules) p.push('Stop processing');
+  return p.join(', ');
 }
 
-async function toggleRule(ruleId, enabled) {
-  try {
-    await graphPatch(`/me/mailFolders/inbox/messageRules/${ruleId}`, { isEnabled: enabled });
-    toast(enabled ? 'Rule enabled' : 'Rule disabled', 'success');
-  } catch(e) { toast('Error: ' + e.message, 'error'); loadRulesTab('inbox'); }
-}
-window.toggleRule = toggleRule;
-
-async function deleteRule(ruleId) {
+window._toggleRule7 = async function(id, en) {
+  try { await graphPatch(`/me/mailFolders/inbox/messageRules/${id}`,{isEnabled:en}); toast(en?'Rule enabled':'Rule disabled','success'); }
+  catch(e) { toast(e.message,'error'); _loadRulesTab7('inbox'); }
+};
+window._deleteRule7 = async function(id) {
   if (!confirm('Delete this rule?')) return;
   try {
-    await graphPost(`/me/mailFolders/inbox/messageRules/${ruleId}`, null, 'DELETE');
-    toast('Rule deleted', 'success');
-    loadRulesTab('inbox');
-  } catch(e) { toast('Error: ' + e.message, 'error'); }
-}
-window.deleteRule = deleteRule;
-
-function openEditRuleDialog(ruleId) {
-  const rule = _inboxRules.find(r => r.id === ruleId);
-  if (!rule) return;
-  openCreateRuleDialog({
-    editId: ruleId,
-    name: rule.displayName,
-    fromContains: (rule.conditions?.senderContains||[]).join('; '),
-    subjectContains: (rule.conditions?.subjectContains||[]).join('; '),
-    hasAttachments: rule.conditions?.hasAttachments,
-    moveToFolder: rule.actions?.moveToFolder,
-    markAsRead: rule.actions?.markAsRead,
-    delete_: rule.actions?.delete,
-    stopProcessing: rule.actions?.stopProcessingRules,
+    await fetch('https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messageRules/'+id,{method:'DELETE',headers:{Authorization:'Bearer '+(window.S?.accessToken||'')}});
+    toast('Rule deleted','success'); _loadRulesTab7('inbox');
+  } catch(e) { toast(e.message,'error'); }
+};
+window._editRule7 = function(id) {
+  const r = _inboxRules7.find(x=>x.id===id); if(!r) return;
+  openCreateRuleDialog7({
+    editId:id, name:r.displayName,
+    fromContains:(r.conditions?.senderContains||[]).join('; '),
+    subjectContains:(r.conditions?.subjectContains||[]).join('; '),
+    hasAttachments:r.conditions?.hasAttachments,
+    moveToFolder:r.actions?.moveToFolder,
+    markAsRead:r.actions?.markAsRead,
+    delete_:r.actions?.delete,
+    stopProcessing:r.actions?.stopProcessingRules,
   });
-}
-window.openEditRuleDialog = openEditRuleDialog;
+};
+window._removeOverride7 = async function(id) {
+  if (!confirm('Remove this override?')) return;
+  try {
+    await fetch('https://graph.microsoft.com/v1.0/me/inferenceClassification/overrides/'+id,{method:'DELETE',headers:{Authorization:'Bearer '+(window.S?.accessToken||'')}});
+    toast('Removed','success'); _loadRulesTab7('blocked');
+  } catch(e) { toast(e.message,'error'); }
+};
 
-// ═══════════════════════════════════════════════════════════════
-// FIX E: CREATE RULE DIALOG — advanced, functional
-// ═══════════════════════════════════════════════════════════════
-function openCreateRuleDialog(opts) {
-  opts = opts || {};
-  // Close any existing
-  const old = document.getElementById('_create-rule-modal');
-  if (old) old.remove();
+/* ═══════════════════════════════════════════════════════════════
+   H. CREATE RULE DIALOG — advanced, functional
+   ═══════════════════════════════════════════════════════════════ */
+window.openCreateRuleDialog7 = function(opts) {
+  opts = opts||{};
+  document.getElementById('_crd7')?.remove();
+  const folders = window.S?.folders||[];
+  const folderOpts = folders.map(f=>`<option value="${f.id}" ${f.id===opts.moveToFolder?'selected':''}>${esc7(f.name)}</option>`).join('');
+  const defaultName = opts.name || (opts.folderName ? `Move to ${opts.folderName}` : opts.fromContains ? `From ${opts.fromContains}` : '');
 
-  const folders = (window.S?.folders || []);
-  const folderOptions = folders.map(f =>
-    `<option value="${f.id}" ${f.id===opts.moveToFolder?'selected':''}>${esc(f.name)}</option>`
-  ).join('');
-
-  const modal = document.createElement('div');
-  modal.id = '_create-rule-modal';
-  modal.style.cssText = `
-    position:fixed;inset:0;z-index:99000;
-    background:rgba(0,0,0,.4);backdrop-filter:blur(2px);
-    display:flex;align-items:center;justify-content:center;
-  `;
-
-  modal.innerHTML = `
-    <div style="background:var(--bg-raised);border-radius:var(--radius-xl);
-                box-shadow:var(--shadow-xl);width:520px;max-width:95vw;max-height:90vh;
-                overflow-y:auto;animation:slideUp .18s ease">
-      <div style="padding:18px 24px;border-bottom:1px solid var(--border-light);display:flex;align-items:center;gap:10px">
+  const d = document.createElement('div');
+  d.id = '_crd7';
+  d.style.cssText = 'position:fixed;inset:0;z-index:999000;background:rgba(0,0,0,.45);backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center';
+  d.innerHTML = `
+    <div style="background:var(--bg-raised);border-radius:12px;box-shadow:0 8px 40px rgba(0,0,0,.25);width:520px;max-width:96vw;max-height:92vh;overflow-y:auto;animation:_p7up .2s ease">
+      <div style="padding:16px 22px;border-bottom:1px solid var(--border-light);display:flex;align-items:center">
         <span style="font-size:15px;font-weight:700;flex:1">${opts.editId?'Edit rule':'Create inbox rule'}</span>
-        <button onclick="document.getElementById('_create-rule-modal').remove()"
-          style="border:none;background:transparent;cursor:pointer;font-size:20px;color:var(--txt-muted);line-height:1">✕</button>
+        <button onclick="document.getElementById('_crd7').remove()" style="border:none;background:transparent;cursor:pointer;font-size:20px;color:var(--txt-muted);line-height:1;padding:2px 6px">✕</button>
       </div>
-      <div style="padding:20px 24px;display:flex;flex-direction:column;gap:16px">
+      <div style="padding:18px 22px;display:flex;flex-direction:column;gap:14px">
 
-        <div>
-          <label style="font-size:12px;font-weight:600;color:var(--txt-muted);display:block;margin-bottom:5px">Rule name</label>
-          <input id="_rule-name" type="text" placeholder="My inbox rule"
-            value="${esc(opts.name||opts.folderName ? 'Move to ' + (opts.folderName||'') : '')}"
-            style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:var(--radius-md);
-                   background:var(--bg-canvas);color:var(--txt);font-size:13px;outline:none">
-        </div>
+        <label style="font-size:12px;font-weight:600;color:var(--txt-muted)">Rule name
+          <input id="_crd7-name" type="text" value="${esc7(defaultName)}" placeholder="My rule"
+            style="display:block;width:100%;margin-top:4px;padding:8px 10px;border:1px solid var(--border);border-radius:6px;background:var(--bg-canvas);color:var(--txt);font-size:13px;outline:none;box-sizing:border-box">
+        </label>
 
-        <div style="font-size:12px;font-weight:700;color:var(--txt-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:-8px">Conditions — When the message…</div>
+        <div style="font-size:11px;font-weight:700;color:var(--txt-hint);text-transform:uppercase;letter-spacing:.6px">Conditions — when a message…</div>
 
-        <div>
-          <label style="font-size:12px;font-weight:600;color:var(--txt-muted);display:block;margin-bottom:5px">
-            From address contains (separate with semicolons)
-          </label>
-          <input id="_rule-from" type="text" placeholder="e.g. newsletter@example.com; noreply@"
-            value="${esc(opts.fromContains||'')}"
-            style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:var(--radius-md);
-                   background:var(--bg-canvas);color:var(--txt);font-size:13px;outline:none">
-        </div>
+        <label style="font-size:12px;font-weight:600;color:var(--txt-muted)">From address contains
+          <input id="_crd7-from" type="text" value="${esc7(opts.fromContains||'')}" placeholder="e.g. newsletter@company.com"
+            style="display:block;width:100%;margin-top:4px;padding:8px 10px;border:1px solid var(--border);border-radius:6px;background:var(--bg-canvas);color:var(--txt);font-size:13px;outline:none;box-sizing:border-box">
+          <span style="font-size:11px;color:var(--txt-hint)">Separate multiple with semicolons</span>
+        </label>
 
-        <div>
-          <label style="font-size:12px;font-weight:600;color:var(--txt-muted);display:block;margin-bottom:5px">
-            Subject contains (separate with semicolons)
-          </label>
-          <input id="_rule-subject" type="text" placeholder="e.g. Invoice; Payment"
-            value="${esc(opts.subjectContains||'')}"
-            style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:var(--radius-md);
-                   background:var(--bg-canvas);color:var(--txt);font-size:13px;outline:none">
-        </div>
+        <label style="font-size:12px;font-weight:600;color:var(--txt-muted)">Subject contains
+          <input id="_crd7-subj" type="text" value="${esc7(opts.subjectContains||opts.subjectHint||'')}" placeholder="e.g. Invoice; Unsubscribe"
+            style="display:block;width:100%;margin-top:4px;padding:8px 10px;border:1px solid var(--border);border-radius:6px;background:var(--bg-canvas);color:var(--txt);font-size:13px;outline:none;box-sizing:border-box">
+        </label>
 
-        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;color:var(--txt)">
-          <input type="checkbox" id="_rule-has-att" ${opts.hasAttachments?'checked':''}
-            style="accent-color:var(--acc);width:14px;height:14px">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;color:var(--txt);font-weight:400">
+          <input type="checkbox" id="_crd7-att" ${opts.hasAttachments?'checked':''} style="accent-color:var(--acc);width:14px;height:14px">
           Has attachments
         </label>
 
-        <div style="font-size:12px;font-weight:700;color:var(--txt-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:-8px">Actions — Then…</div>
+        <div style="font-size:11px;font-weight:700;color:var(--txt-hint);text-transform:uppercase;letter-spacing:.6px">Actions — then…</div>
 
-        <div>
-          <label style="font-size:12px;font-weight:600;color:var(--txt-muted);display:block;margin-bottom:5px">Move to folder</label>
-          <select id="_rule-move-folder"
-            style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:var(--radius-md);
-                   background:var(--bg-canvas);color:var(--txt);font-size:13px;outline:none">
-            <option value="">— Don't move —</option>
-            ${folderOptions}
+        <label style="font-size:12px;font-weight:600;color:var(--txt-muted)">Move to folder
+          <select id="_crd7-folder" style="display:block;width:100%;margin-top:4px;padding:8px 10px;border:1px solid var(--border);border-radius:6px;background:var(--bg-canvas);color:var(--txt);font-size:13px;outline:none;box-sizing:border-box">
+            <option value="">— Don't move —</option>${folderOpts}
           </select>
-        </div>
-
-        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;color:var(--txt)">
-          <input type="checkbox" id="_rule-mark-read" ${opts.markAsRead?'checked':''}
-            style="accent-color:var(--acc);width:14px;height:14px">
-          Mark as read
         </label>
 
-        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;color:var(--txt)">
-          <input type="checkbox" id="_rule-delete" ${opts.delete_?'checked':''}
-            style="accent-color:var(--acc);width:14px;height:14px">
-          Delete message
-        </label>
-
-        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;color:var(--txt)">
-          <input type="checkbox" id="_rule-stop" ${opts.stopProcessing?'checked':''}
-            style="accent-color:var(--acc);width:14px;height:14px">
-          Stop processing more rules
-        </label>
+        ${[['_crd7-read','Mark as read',opts.markAsRead],['_crd7-del','Delete message',opts.delete_],['_crd7-stop','Stop processing more rules',opts.stopProcessing]].map(([id,label,chk])=>`
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;color:var(--txt);font-weight:400">
+          <input type="checkbox" id="${id}" ${chk?'checked':''} style="accent-color:var(--acc);width:14px;height:14px">
+          ${label}
+        </label>`).join('')}
 
       </div>
-      <div style="padding:14px 24px;border-top:1px solid var(--border-light);display:flex;justify-content:flex-end;gap:8px">
-        <button class="btn btn-ghost" onclick="document.getElementById('_create-rule-modal').remove()">Cancel</button>
-        <button class="btn btn-primary" onclick="saveRule('${opts.editId||''}')">
-          ${opts.editId ? 'Save changes' : 'Create rule'}
-        </button>
+      <div style="padding:12px 22px;border-top:1px solid var(--border-light);display:flex;justify-content:flex-end;gap:8px">
+        <button class="btn btn-ghost" onclick="document.getElementById('_crd7').remove()">Cancel</button>
+        <button class="btn btn-primary" onclick="_saveRule7('${opts.editId||''}')">${opts.editId?'Save changes':'Create rule'}</button>
       </div>
-    </div>
-  `;
+    </div>`;
+  document.body.appendChild(d);
+  d.addEventListener('mousedown', ev => { if(ev.target===d) d.remove(); });
+  document.getElementById('_crd7-name').focus();
+};
+// also keep old name working
+window.openCreateRuleDialog = window.openCreateRuleDialog7;
 
-  document.body.appendChild(modal);
-  document.getElementById('_rule-name').focus();
-
-  // Close on backdrop click
-  modal.addEventListener('mousedown', e => {
-    if (e.target === modal) modal.remove();
-  });
-}
-window.openCreateRuleDialog = openCreateRuleDialog;
-
-async function saveRule(editId) {
-  const name     = document.getElementById('_rule-name')?.value.trim();
-  const fromRaw  = document.getElementById('_rule-from')?.value.trim();
-  const subjRaw  = document.getElementById('_rule-subject')?.value.trim();
-  const hasAtt   = document.getElementById('_rule-has-att')?.checked;
-  const moveTo   = document.getElementById('_rule-move-folder')?.value;
-  const markRead = document.getElementById('_rule-mark-read')?.checked;
-  const del      = document.getElementById('_rule-delete')?.checked;
-  const stop     = document.getElementById('_rule-stop')?.checked;
-
-  if (!name) { toast('Please enter a rule name', 'error'); return; }
-
-  const fromList = fromRaw ? fromRaw.split(/[;,]+/).map(s=>s.trim()).filter(Boolean) : [];
-  const subjList = subjRaw ? subjRaw.split(/[;,]+/).map(s=>s.trim()).filter(Boolean) : [];
-
-  if (!fromList.length && !subjList.length && !hasAtt) {
-    toast('Please add at least one condition', 'error');
-    return;
-  }
-  if (!moveTo && !markRead && !del) {
-    toast('Please add at least one action', 'error');
-    return;
-  }
-
-  const rule = {
-    displayName: name,
-    sequence: _inboxRules.length + 1,
-    isEnabled: true,
-    conditions: {},
-    actions: {},
-  };
-
-  if (fromList.length)  rule.conditions.senderContains  = fromList;
-  if (subjList.length)  rule.conditions.subjectContains = subjList;
-  if (hasAtt)           rule.conditions.hasAttachments   = true;
-  if (moveTo)           rule.actions.moveToFolder         = moveTo;
-  if (markRead)         rule.actions.markAsRead           = true;
-  if (del)              rule.actions.delete               = true;
-  if (stop)             rule.actions.stopProcessingRules  = true;
-
+window._saveRule7 = async function(editId) {
+  const name   = document.getElementById('_crd7-name')?.value.trim();
+  const fromR  = document.getElementById('_crd7-from')?.value.trim();
+  const subjR  = document.getElementById('_crd7-subj')?.value.trim();
+  const hasAtt = document.getElementById('_crd7-att')?.checked;
+  const moveTo = document.getElementById('_crd7-folder')?.value;
+  const markRd = document.getElementById('_crd7-read')?.checked;
+  const del    = document.getElementById('_crd7-del')?.checked;
+  const stop   = document.getElementById('_crd7-stop')?.checked;
+  if (!name) { toast('Please enter a rule name','error'); return; }
+  const froms = fromR ? fromR.split(/[;,]+/).map(s=>s.trim()).filter(Boolean) : [];
+  const subjs = subjR ? subjR.split(/[;,]+/).map(s=>s.trim()).filter(Boolean) : [];
+  if (!froms.length && !subjs.length && !hasAtt) { toast('Add at least one condition','error'); return; }
+  if (!moveTo && !markRd && !del) { toast('Add at least one action','error'); return; }
+  const rule = { displayName:name, isEnabled:true, sequence:_inboxRules7.length+1, conditions:{}, actions:{} };
+  if (froms.length) rule.conditions.senderContains  = froms;
+  if (subjs.length) rule.conditions.subjectContains = subjs;
+  if (hasAtt)       rule.conditions.hasAttachments   = true;
+  if (moveTo)       rule.actions.moveToFolder         = moveTo;
+  if (markRd)       rule.actions.markAsRead           = true;
+  if (del)          rule.actions.delete               = true;
+  if (stop)         rule.actions.stopProcessingRules  = true;
   try {
-    if (editId) {
-      await graphPatch(`/me/mailFolders/inbox/messageRules/${editId}`, rule);
-      toast('Rule updated', 'success');
-    } else {
-      await graphPost('/me/mailFolders/inbox/messageRules', rule);
-      toast('Rule created', 'success');
-    }
-    document.getElementById('_create-rule-modal')?.remove();
-    _rulesInited = false; // Force re-render
-    if (window.S?.currentView === 'rules') {
-      initRulesPane();
-    }
-  } catch(e) {
-    toast('Error: ' + e.message, 'error');
-  }
-}
-window.saveRule = saveRule;
+    if (editId) await graphPatch(`/me/mailFolders/inbox/messageRules/${editId}`, rule);
+    else        await graphPost('/me/mailFolders/inbox/messageRules', rule);
+    toast(editId?'Rule updated':'Rule created','success');
+    document.getElementById('_crd7')?.remove();
+    _rulesReady = false;
+    if (window.S?.currentView === 'rules') { _buildRulesPane7(); _loadRulesTab7('inbox'); }
+  } catch(e) { toast('Error: '+e.message,'error'); }
+};
 
-// ═══════════════════════════════════════════════════════════════
-// FIX F: CREATE RULE FROM MESSAGE CONTEXT MENU
-// Also: Move to folder should show ALL folders + create new
-// ═══════════════════════════════════════════════════════════════
-
-// Patch context menu to add "Create rule" and enhanced "Move to"
-const __origBuildCtxMenuHtml = window.buildCtxMenuHtml;
-if (__origBuildCtxMenuHtml) {
-  window.buildCtxMenuHtml = function(cx, cy, msgId) {
-    // We'll let the original build, then inject extra items via DOM after
-    return __origBuildCtxMenuHtml(cx, cy, msgId);
+/* ═══════════════════════════════════════════════════════════════
+   I. SETTINGS PANEL — patch to show working theme picker
+   ═══════════════════════════════════════════════════════════════ */
+const _origTogSettings = window.toggleSettingsPanel;
+if (_origTogSettings) {
+  window.toggleSettingsPanel = function() {
+    _origTogSettings();
+    setTimeout(() => {
+      const panel = document.getElementById('_settings-panel');
+      if (!panel || panel.dataset.themed7) return;
+      panel.dataset.themed7 = '1';
+      const content = panel.querySelector('[style*="overflow-y"]') || panel.children[1];
+      if (!content) return;
+      const sec = document.createElement('div');
+      sec.style.cssText = 'padding:14px 16px;border-bottom:1px solid var(--border-light)';
+      sec.innerHTML = `
+        <div style="font-size:10px;font-weight:700;color:var(--txt-hint);text-transform:uppercase;letter-spacing:.7px;margin-bottom:10px">Colour theme</div>
+        <div style="display:flex;gap:10px">
+          ${Object.entries({outlook:'#9237FA',midnight:'#A78BFA',graphite:'#60A5FA',ocean:'#22D3EE',violet:'#F472B6'}).map(([n,c])=>`
+            <button data-theme-dot="${n}" onclick="applyTheme('${n}')" title="${n}"
+              style="width:30px;height:30px;border-radius:50%;border:none;background:${c};cursor:pointer;
+                     transition:transform .15s;${(localStorage.getItem('lm_active_theme')||'outlook')===n?'outline:2px solid var(--acc);outline-offset:2px':''}"
+              onmouseover="this.style.transform='scale(1.2)'" onmouseout="this.style.transform=''">
+            </button>`).join('')}
+        </div>`;
+      content.prepend(sec);
+    }, 30);
   };
 }
 
-// Patch showMoveToMenu to show ALL folders, not just first 12
-window.showMoveToMenu = function(e) {
-  if (!window.S || !S.selectedMsg) { toast('No message selected','info'); return; }
-  e.stopPropagation();
-  const existing = document.getElementById('_moveto_menu');
-  if (existing) { existing.remove(); return; }
+/* ═══════════════════════════════════════════════════════════════
+   J. GLOBAL STYLES
+   ═══════════════════════════════════════════════════════════════ */
+const _s7 = document.createElement('style');
+_s7.textContent = `
+  @keyframes _p7in  { from{opacity:0;transform:scale(.95)} to{opacity:1;transform:scale(1)} }
+  @keyframes _p7up  { from{opacity:0;transform:translateY(16px)} to{opacity:1;transform:translateY(0)} }
+  @keyframes spin7  { to{transform:rotate(360deg)} }
+  #_popup7 { animation:_p7in .1s ease; }
+  ._p7item:hover { background:var(--neutral-lighter)!important; color:var(--txt)!important; }
+  ._mv7-item:hover { background:var(--neutral-lighter)!important; color:var(--txt)!important; }
+  ._fi-rule-btn:hover { opacity:1!important; color:var(--acc)!important; background:var(--acc-glow)!important; }
+`;
+document.head.appendChild(_s7);
 
-  const menu = document.createElement('div');
-  menu.id = '_moveto_menu';
-  menu.style.cssText = `position:fixed;top:${e.clientY+4}px;left:${e.clientX}px;z-index:9700;
-    min-width:220px;max-height:360px;overflow-y:auto;
-    background:var(--bg-raised);border:1px solid var(--border);
-    border-radius:var(--radius-lg);box-shadow:var(--shadow-xl);padding:4px 0;`;
-
-  const folders = window.S?.folders || [];
-  const searchId = '_mvto-search';
-
-  menu.innerHTML = `
-    <div style="padding:6px 10px;border-bottom:1px solid var(--border-light)">
-      <input id="${searchId}" type="text" placeholder="Search folders…"
-        style="width:100%;padding:5px 8px;border:1px solid var(--border);border-radius:4px;
-               font-size:12px;background:var(--bg-canvas);color:var(--txt);outline:none"
-        oninput="filterMoveToMenu(this.value)">
-    </div>
-    <div id="_mvto-list">
-      ${folders.map(f => `
-        <div class="ctx-item _mvto-item" data-name="${esc(f.name.toLowerCase())}"
-             onclick="moveMsgToFolder('${f.id}','${esc4(f.name)}')"
-             style="display:flex;align-items:center;gap:8px;padding:7px 12px;cursor:pointer;font-size:12.5px;color:var(--txt-sub)">
-          <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
-            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
-          </svg>
-          ${esc(f.name)}
-        </div>`).join('')}
-    </div>
-    <div style="padding:4px 0;border-top:1px solid var(--border-light)">
-      <div class="ctx-item" onclick="promptNewFolderAndMove()"
-           style="display:flex;align-items:center;gap:8px;padding:7px 12px;cursor:pointer;font-size:12.5px;color:var(--acc)">
-        <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
-          <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
-        </svg>
-        New folder…
-      </div>
-    </div>
-  `;
-
-  document.body.appendChild(menu);
-
-  // Keep on screen
-  const r = menu.getBoundingClientRect();
-  if (r.right  > window.innerWidth)  menu.style.left = (e.clientX - r.width) + 'px';
-  if (r.bottom > window.innerHeight) menu.style.top  = (e.clientY - r.height) + 'px';
-
-  setTimeout(() => document.addEventListener('click', () => menu.remove(), { once: true }), 0);
-  setTimeout(() => document.getElementById(searchId)?.focus(), 50);
-};
-
-window.filterMoveToMenu = function(q) {
-  const lq = q.toLowerCase();
-  document.querySelectorAll('._mvto-item').forEach(el => {
-    el.style.display = el.dataset.name.includes(lq) ? '' : 'none';
-  });
-};
-
-window.promptNewFolderAndMove = async function() {
-  document.getElementById('_moveto_menu')?.remove();
-  const name = prompt('New folder name:');
-  if (!name || !name.trim()) return;
-  try {
-    const res = await graphPost('/me/mailFolders', { displayName: name.trim() });
-    toast(`Folder "${name.trim()}" created`, 'success');
-    await moveMsgToFolder(res.id, name.trim());
-    await loadFolders();
-  } catch(e) { toast('Error: ' + e.message, 'error'); }
-};
-
-// Add "Create rule" to the existing context menu
-// Patch ctxMove to also offer rule creation
-const __origCtxMove = window.ctxMove;
-window.ctxMove = function(e) { window.showMoveToMenu(e); };
-
-// Expose Create Rule from message context via a new function
-window.ctxCreateRule = function() {
-  if (!window.S?.selectedMsg) return;
-  const msg = S.selectedMsg;
-  const from = msg.from?.emailAddress?.address || '';
-  const subj  = msg.subject || '';
-  openCreateRuleDialog({ fromContains: from });
-};
-
-// ═══════════════════════════════════════════════════════════════
-// FIX G: Patch graphPost to support DELETE method
-// ═══════════════════════════════════════════════════════════════
-const __origGraphPost = window.graphPost;
-if (__origGraphPost) {
-  window.graphPost = async function(path, body, method) {
-    method = method || 'POST';
-    if (method === 'DELETE' && body === null) {
-      // Use fetch directly for DELETE with no body
-      try {
-        const token = window.S?.accessToken;
-        if (!token) throw new Error('No access token');
-        const r = await fetch('https://graph.microsoft.com/v1.0' + path, {
-          method: 'DELETE',
-          headers: { Authorization: 'Bearer ' + token },
-        });
-        if (!r.ok) {
-          const txt = await r.text().catch(()=>'');
-          throw new Error(txt || ('HTTP ' + r.status));
-        }
-        return {};
-      } catch(e) { throw e; }
-    }
-    return __origGraphPost(path, body, method);
-  };
-}
-
-// ═══════════════════════════════════════════════════════════════
-// INIT — apply theme and wire everything on DOM ready
-// ═══════════════════════════════════════════════════════════════
-function ready(fn) {
-  if (document.readyState !== 'loading') fn();
-  else document.addEventListener('DOMContentLoaded', fn);
-}
-
-ready(() => {
-  // Re-apply theme (in case CSS vars were overridden)
+/* ═══════════════════════════════════════════════════════════════
+   INIT
+   ═══════════════════════════════════════════════════════════════ */
+domReady(() => {
   applyTheme(localStorage.getItem('lm_active_theme') || 'outlook');
-
-  // Add @keyframes for modal
-  if (!document.getElementById('_p6-styles')) {
-    const s = document.createElement('style');
-    s.id = '_p6-styles';
-    s.textContent = `
-      @keyframes slideUp { from{transform:translateY(20px);opacity:0} to{transform:translateY(0);opacity:1} }
-      @keyframes ctxIn   { from{opacity:0;transform:scale(.96)} to{opacity:1;transform:scale(1)} }
-      .ctx-item:hover { background:var(--neutral-lighter)!important;color:var(--txt)!important; }
-    `;
-    document.head.appendChild(s);
+  wireFolderRuleIcons();
+  // Re-wire after folder tree re-renders
+  const origRFT = window.renderFolderTree;
+  if (origRFT) {
+    window.renderFolderTree = function() {
+      origRFT();
+      setTimeout(wireFolderRuleIcons, 0);
+    };
   }
-
-  // Wire folder sidebar right-click (re-wire in case it ran before DOM)
-  wireFolderCtxMenu();
-
-  // Patch switchView for rules tab in the rail buttons
-  document.querySelectorAll('[onclick*="rules"]').forEach(el => {
-    if (el.getAttribute('onclick')?.includes("switchView('rules')")) {
-      // Already wired
-    }
-  });
+  // Also wire if renderFolderNodes was called without our patch
+  const origRFN = window.renderFolderNodes;
+  if (origRFN && !origRFN._p7) {
+    window.renderFolderNodes = function(nodes) {
+      const h = origRFN(nodes);
+      setTimeout(wireFolderRuleIcons, 0);
+      return h;
+    };
+    window.renderFolderNodes._p7 = true;
+  }
 });
 
-console.info('[PATCH-6] Theme+Rules+Folders+Tooltips loaded');
-
-})(); // end PATCH6
+console.info('[PATCH-7] Definitive fix loaded: Theme·Tooltips·CtxMenu·ReadingBar·FolderMenu·Rules');
+})();
 </script>
-<!-- END PATCH 6 -->
+<!-- END PATCH 7 -->
 
 </body>
 </html>
