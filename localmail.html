@@ -1846,6 +1846,8 @@
       </div>
     </div>
   </div>
+  <!-- Rules & Policies pane — hidden until switchView('rules') -->
+  <div id="rules-pane" style="display:none;flex-direction:column;flex:1;overflow:hidden"></div>
 </div>
 
 <!-- Toast -->
@@ -3098,6 +3100,9 @@ const S = {
   currentView:'mail',composeMeta:{},isOffline:false,
   attScanResults:[],attScanAbort:false,
 };
+// Expose S on window so PATCH7 and other cross-script-block code
+// can reach it via window.S (const declarations are NOT on window).
+window.S = S;
 
 // ═══════════════════════════════════════════════════════════════════════════
 // ACCOUNT MANAGEMENT
@@ -4478,55 +4483,106 @@ window.notifyPermissionMissing = notifyPermissionMissing;
 })();
 
 // ═══════════════════════════════════════════════════════════════════
-// TOOLTIP SYSTEM — native title= works but this makes them nicer
+// TOOLTIP SYSTEM — delegated, uses mouseout+relatedTarget to avoid
+// the {once:true} child-element false-leave bug
 // ═══════════════════════════════════════════════════════════════════
 (function initTooltips() {
-  let tip = null, tipTimer = null;
+  let tip = null, tipTimer = null, tipEl = null;
+
+  function ensureTip() {
+    if (tip) return tip;
+    tip = document.createElement('div');
+    tip.id = '_owa-tip';
+    tip.style.cssText =
+      'position:fixed;z-index:99999;background:#1a1a1a;color:#fff;' +
+      'font-size:11px;padding:5px 9px;border-radius:5px;' +
+      'pointer-events:none;white-space:nowrap;' +
+      'box-shadow:0 2px 8px rgba(0,0,0,.25);' +
+      'opacity:0;transition:opacity .12s;';
+    document.body.appendChild(tip);
+    return tip;
+  }
 
   function showTip(el, text) {
-    if (!text) return;
-    if (!tip) {
-      tip = document.createElement('div');
-      tip.style.cssText = `
-        position:fixed;z-index:99999;
-        background:#1a1a1a;color:#fff;
-        font-size:11px;padding:5px 9px;border-radius:5px;
-        pointer-events:none;white-space:nowrap;
-        box-shadow:0 2px 8px rgba(0,0,0,.25);
-        opacity:0;transition:opacity .12s;
-      `;
-      document.body.appendChild(tip);
-    }
-    tip.textContent = text;
+    const t = ensureTip();
+    t.textContent = text;
     const r = el.getBoundingClientRect();
-    tip.style.left = Math.min(r.left + r.width / 2, window.innerWidth - 160) + 'px';
-    tip.style.top  = (r.bottom + 6) + 'px';
-    tip.style.transform = 'translateX(-50%)';
-    requestAnimationFrame(() => { tip.style.opacity = '1'; });
+    const left = Math.min(r.left + r.width / 2, window.innerWidth - 12);
+    t.style.left = left + 'px';
+    t.style.top  = (r.bottom + 6) + 'px';
+    t.style.transform = 'translateX(-50%)';
+    requestAnimationFrame(() => { t.style.opacity = '1'; });
   }
 
   function hideTip() {
     if (tip) tip.style.opacity = '0';
   }
 
-  document.addEventListener('mouseover', e => {
-    const el = e.target.closest('[title]');
-    if (!el) return;
-    const text = el.getAttribute('title');
-    if (!text) return;
-    // Suppress native tooltip by temporarily removing title
-    el.setAttribute('data-title', text);
-    el.removeAttribute('title');
-    clearTimeout(tipTimer);
-    tipTimer = setTimeout(() => showTip(el, text), 500);
+  function stashTitle(el) {
+    const txt = el.getAttribute('title');
+    if (txt) { el.setAttribute('data-_tip', txt); el.removeAttribute('title'); }
+  }
 
-    el.addEventListener('mouseleave', () => {
-      clearTimeout(tipTimer);
-      hideTip();
-      el.setAttribute('title', el.getAttribute('data-title') || '');
-      el.removeAttribute('data-title');
-    }, { once: true });
+  function restoreTitle(el) {
+    if (!el) return;
+    const txt = el.getAttribute('data-_tip');
+    if (txt) { el.setAttribute('title', txt); el.removeAttribute('data-_tip'); }
+  }
+
+  function getTipText(el) {
+    return el.getAttribute('data-_tip') || el.getAttribute('title') || '';
+  }
+
+  // mouseover bubbles: fires when entering el OR any child of el.
+  // We treat it as "enter" only when coming from OUTSIDE el.
+  document.addEventListener('mouseover', e => {
+    const el = e.target.closest('[title],[data-_tip]');
+
+    // Mouse moved to an element with no tooltip — clear current if leaving it
+    if (!el) {
+      if (tipEl) { clearTimeout(tipTimer); hideTip(); restoreTitle(tipEl); tipEl = null; }
+      return;
+    }
+
+    // Still hovering the same tooltip target — do nothing
+    if (el === tipEl) return;
+
+    // Coming from inside el (child→el) — not a real entry, skip
+    if (tipEl && tipEl.contains(e.relatedTarget)) return;
+
+    // Entering a NEW tooltip target — cancel previous, start fresh
+    clearTimeout(tipTimer);
+    hideTip();
+    restoreTitle(tipEl);
+    tipEl = null;
+
+    const text = getTipText(el);
+    if (!text) return;
+
+    stashTitle(el);   // suppress native tooltip bubble
+    tipEl = el;
+    tipTimer = setTimeout(() => showTip(el, text), 420);
   });
+
+  // mouseout bubbles: fires when leaving el OR any child.
+  // We treat it as "leave" only when mouse goes OUTSIDE el.
+  document.addEventListener('mouseout', e => {
+    if (!tipEl) return;
+    // Is this event from our tooltip target or one of its children?
+    if (!tipEl.contains(e.target)) return;
+    // Is the mouse going to somewhere still inside our target? Then ignore.
+    if (tipEl.contains(e.relatedTarget)) return;
+
+    // Genuine leave
+    clearTimeout(tipTimer);
+    hideTip();
+    restoreTitle(tipEl);
+    tipEl = null;
+  });
+
+  // Dismiss on scroll or keyboard
+  document.addEventListener('scroll',  hideTip, true);
+  document.addEventListener('keydown', hideTip, true);
 })();
 
 // ═══════════════════════════════════════════════════════════════════
@@ -6054,50 +6110,13 @@ window.applyTheme = function(name) {
 domReady(() => applyTheme(localStorage.getItem('lm_active_theme') || 'outlook'));
 
 /* ═══════════════════════════════════════════════════════════════
-   B. TOOLTIP SYSTEM — definitive rewrite, no interference
+   B. TOOLTIP SYSTEM — replaced by superior implementation above;
+      this stub only cleans up any leftover old tooltip elements.
    ═══════════════════════════════════════════════════════════════ */
 (function() {
-  // Kill old tooltip
-  document.getElementById('_owa-tooltip')?.remove();
-
-  const T = document.createElement('div');
-  T.id = '_t7';
-  T.style.cssText = 'position:fixed;z-index:999999;pointer-events:none;background:rgba(24,24,24,.92);color:#fff;font-size:11.5px;padding:4px 9px;border-radius:5px;white-space:nowrap;opacity:0;transition:opacity .15s;box-shadow:0 2px 8px rgba(0,0,0,.3);max-width:260px;overflow:hidden;text-overflow:ellipsis';
-  document.body.appendChild(T);
-
-  const store = new WeakMap();
-  let timer = null, cur = null;
-
-  function hide() {
-    clearTimeout(timer);
-    T.style.opacity = '0';
-    if (cur) { const v=store.get(cur); if(v&&!cur.hasAttribute('title')) cur.setAttribute('title',v); store.delete(cur); cur=null; }
-  }
-
-  document.addEventListener('mousemove', ev => {
-    const el = ev.target.closest('[title]');
-    if (!el) { hide(); return; }
-    if (el === cur) return;
-    hide();
-    const text = el.getAttribute('title') || '';
-    if (!text) return;
-    store.set(el, text);
-    el.removeAttribute('title');
-    cur = el;
-    clearTimeout(timer);
-    timer = setTimeout(() => {
-      T.textContent = text;
-      let lx = ev.clientX + 14, ly = ev.clientY + 18;
-      if (lx + 260 > window.innerWidth)  lx = ev.clientX - 260;
-      if (ly + 28  > window.innerHeight) ly = ev.clientY - 28;
-      T.style.left = px(lx); T.style.top = px(ly);
-      T.style.opacity = '1';
-    }, 650);
-  }, true);
-
-  document.addEventListener('mousedown',  hide, true);
-  document.addEventListener('scroll',     hide, true);
-  document.addEventListener('keydown',    hide, true);
+  // Remove any stale tooltip nodes from previous patch iterations
+  ['_owa-tooltip', '_t7'].forEach(id => document.getElementById(id)?.remove());
+  // The definitive tooltip system lives in the initTooltips() IIFE above.
 })();
 
 /* ═══════════════════════════════════════════════════════════════
