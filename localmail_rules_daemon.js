@@ -180,16 +180,32 @@ async function poll() {
 
       // Load enabled rules for this admin
       const rules = d.prepare('SELECT * FROM graph_rules WHERE admin_id=? AND enabled=1 ORDER BY id ASC').all(row.admin_id)
-        .map(r => ({...r, enabled:true, conditions:JSON.parse(r.conditions||'[]'), actions:JSON.parse(r.actions||'[]')}));
+        .map(r => ({...r, enabled:true, conditions:JSON.parse(r.conditions||'[]'), actions:JSON.parse(r.actions||'[]'), watchFolders:JSON.parse(r.watch_folders||r.watchFolders||'[]')}));
       if (!rules.length) { L.info(`No enabled rules for ${row.email}`); continue; }
 
-      // Fetch new inbox messages
-      const result = await graphReq('GET',
-        '/me/mailFolders/inbox/messages?$top=50&$orderby=receivedDateTime%20desc' +
-        '&$select=id,subject,from,bodyPreview,hasAttachments,isRead,receivedDateTime',
-        access_token);
+      // Collect unique folder IDs across all rules (skip 'existing'-only rules for real-time)
+      const folderIds = new Set();
+      for (const rule of rules) {
+        if (rule.run_on === 'existing') continue;
+        if (rule.run_on === 'folders' && rule.watchFolders.length) rule.watchFolders.forEach(id => folderIds.add(id));
+        else folderIds.add('inbox'); // 'incoming' and 'both' default to inbox
+      }
+      if (!folderIds.size) { L.info(`No real-time folders for ${row.email}`); continue; }
 
-      const msgs = (result.value||[]).filter(m => !seenIds.has(`${row.admin_id}:${m.id}`));
+      // Fetch messages from each relevant folder
+      let allMsgs = [];
+      for (const fid of folderIds) {
+        try {
+          const result = await graphReq('GET',
+            `/me/mailFolders/${fid}/messages?$top=50&$orderby=receivedDateTime%20desc` +
+            `&$select=id,subject,from,bodyPreview,hasAttachments,isRead,receivedDateTime`,
+            access_token);
+          allMsgs = allMsgs.concat((result.value||[]).map(m => ({...m, _sourceFolderId: fid})));
+        } catch(e) { L.warn(`Could not fetch folder ${fid} for ${row.email}: ${e.message}`); }
+      }
+
+      // Filter to unseen messages
+      const msgs = allMsgs.filter(m => !seenIds.has(`${row.admin_id}:${m.id}`));
       if (!msgs.length) { L.info(`No new messages for ${row.email}`); continue; }
 
       L.info(`${msgs.length} new message(s) for ${row.email}, checking ${rules.length} rule(s)`);
@@ -198,6 +214,11 @@ async function poll() {
 
       for (const msg of msgs) {
         for (const rule of rules) {
+          // Skip if rule is scoped to specific folders and this msg isn't from one
+          if (rule.run_on === 'existing') continue;
+          if (rule.run_on === 'folders' && rule.watchFolders.length) {
+            if (!rule.watchFolders.includes(msg._sourceFolderId)) continue;
+          }
           if (msgMatch(msg, rule)) {
             await execActions(msg, rule, access_token);
             matched++;

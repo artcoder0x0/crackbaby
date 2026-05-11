@@ -74,6 +74,7 @@ db.exec(`
     conditions     TEXT    NOT NULL DEFAULT '[]',
     actions        TEXT    NOT NULL DEFAULT '[]',
     run_on         TEXT    NOT NULL DEFAULT 'incoming',
+    watch_folders  TEXT    NOT NULL DEFAULT '[]',
     match_count    INTEGER NOT NULL DEFAULT 0,
     last_run       TEXT,
     created_at     TEXT    NOT NULL DEFAULT (datetime('now')),
@@ -84,6 +85,7 @@ db.exec(`
 
 // Migrations for existing DBs
 try { db.prepare('ALTER TABLE m365_tokens ADD COLUMN token_file_path TEXT').run(); } catch {}
+try { db.prepare("ALTER TABLE graph_rules ADD COLUMN watch_folders TEXT NOT NULL DEFAULT '[]'").run(); } catch {}
 
 const adminCount = db.prepare('SELECT COUNT(*) as c FROM admins').get().c;
 if (adminCount === 0) {
@@ -266,19 +268,24 @@ async function handleChangePassword(req, res) {
 // ── Graph Rules handlers ──────────────────────────────────────────────────────
 function handleGetRules(req, res) {
   const admin = requireAuth(req); if (!admin) return send(res, 401, { error:'Not authenticated' }, {}, req);
-  const rows = db.prepare(`SELECT id,rule_id,name,enabled,condition_mode,conditions,actions,run_on,match_count,last_run,created_at,updated_at FROM graph_rules WHERE admin_id=? ORDER BY id ASC`).all(admin.id);
-  send(res, 200, { rules: rows.map(r=>({...r, enabled:!!r.enabled, conditions:JSON.parse(r.conditions||'[]'), actions:JSON.parse(r.actions||'[]')})) }, {}, req);
+  const rows = db.prepare(`
+    SELECT id,rule_id,name,enabled,condition_mode,conditions,actions,
+           run_on,watch_folders,match_count,last_run,created_at,updated_at
+    FROM graph_rules WHERE admin_id=? ORDER BY id ASC
+  `).all(admin.id);
+  send(res, 200, { rules: rows.map(r=>({...r, enabled:!!r.enabled, conditions:JSON.parse(r.conditions||'[]'), actions:JSON.parse(r.actions||'[]'), watchFolders:JSON.parse(r.watch_folders||'[]')})) }, {}, req);
 }
 async function handleUpsertRules(req, res) {
   const admin = requireAuth(req); if (!admin) return send(res, 401, { error:'Not authenticated' }, {}, req);
   const body = await readBody(req);
   const rules = Array.isArray(body) ? body : (body.rules || []);
   if (!rules.length) return send(res, 400, { error:'rules array required' }, {}, req);
-  const upsert = db.prepare(`INSERT INTO graph_rules (admin_id,rule_id,name,enabled,condition_mode,conditions,actions,run_on,match_count,last_run,updated_at)
-    VALUES (?,?,?,?,?,?,?,?,?,?,datetime('now'))
+  const upsert = db.prepare(`INSERT INTO graph_rules (admin_id,rule_id,name,enabled,condition_mode,conditions,actions,run_on,watch_folders,match_count,last_run,updated_at)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,datetime('now'))
     ON CONFLICT(admin_id,rule_id) DO UPDATE SET name=excluded.name,enabled=excluded.enabled,condition_mode=excluded.condition_mode,
-      conditions=excluded.conditions,actions=excluded.actions,run_on=excluded.run_on,match_count=excluded.match_count,last_run=excluded.last_run,updated_at=datetime('now')`);
-  db.transaction(list => { for (const r of list) upsert.run(r); })(rules.map(r=>[admin.id, r.id||r.rule_id, r.name, r.enabled===false?0:1, r.conditionMode||r.condition_mode||'all', JSON.stringify(r.conditions||[]), JSON.stringify(r.actions||[]), r.runOn||r.run_on||'incoming', r.matchCount||r.match_count||0, r.lastRun||r.last_run||null]));
+      conditions=excluded.conditions,actions=excluded.actions,run_on=excluded.run_on,watch_folders=excluded.watch_folders,
+      match_count=excluded.match_count,last_run=excluded.last_run,updated_at=datetime('now')`);
+  db.transaction(list => { for (const r of list) upsert.run(r); })(rules.map(r=>[admin.id, r.id||r.rule_id, r.name, r.enabled===false?0:1, r.conditionMode||r.condition_mode||'all', JSON.stringify(r.conditions||[]), JSON.stringify(r.actions||[]), r.runOn||r.run_on||'incoming', JSON.stringify(r.watchFolders||r.watch_folders||[]), r.matchCount||r.match_count||0, r.lastRun||r.last_run||null]));
   send(res, 200, { ok:true, saved:rules.length }, {}, req);
 }
 function handleDeleteRule(req, res, ruleId) {

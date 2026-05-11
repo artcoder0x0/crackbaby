@@ -7114,6 +7114,7 @@ async function grPull() {
       conditions:    r.conditions || [],
       actions:       r.actions    || [],
       runOn:         r.run_on    || 'incoming',
+      watchFolders:  r.watchFolders || r.watch_folders || [],
       matchCount:    r.match_count || 0,
       lastRun:       r.last_run   || null,
     }));
@@ -7229,7 +7230,14 @@ async function grRunRules(msgs, source='manual') {
     const after = window.S?.allMessages||[];
     const newMsgs = after.filter(m => !before.includes(m.id));
     if (newMsgs.length) {
-      const rules = grLoad().filter(r => r.enabled && r.runOn !== 'existing');
+      const currentFolderId = window.S?.currentFolderId || 'inbox';
+      // Only run rules that cover this folder
+      const rules = grLoad().filter(r => {
+        if (!r.enabled) return false;
+        if (r.runOn === 'existing') return false;         // skip existing-only rules
+        if (r.runOn === 'folders') return (r.watchFolders||[]).includes(currentFolderId); // folder-specific
+        return true; // 'incoming' and 'both' run everywhere
+      });
       if (rules.length) {
         const matched = await grRunRules(newMsgs, 'auto');
         if (matched) { toast(`Graph Rules: ${matched} message${matched>1?'s':''} processed`, 'info'); loadFolder(...args); }
@@ -7326,12 +7334,26 @@ window._grDelete = function(id) {
 window._grRunNow = async function() {
   const btn = document.getElementById('gr-run-btn');
   if (btn) btn.disabled = true;
-  toast('Running rules on inbox…','info');
+  toast('Running rules…','info');
   try {
-    // Fetch fresh top-200 inbox messages
-    const res = await graphGet('/me/mailFolders/inbox/messages?$top=200&$select=id,subject,from,bodyPreview,hasAttachments,isRead');
-    const msgs = res.value || [];
-    const count = await grRunRules(msgs, 'manual');
+    const rules = grLoad().filter(r => r.enabled && r.runOn !== 'incoming');
+    if (!rules.length) { toast('No rules set to run on existing messages','info'); return; }
+
+    // Collect unique folder IDs we need to fetch
+    const folderIds = new Set(['inbox']); // always include inbox
+    rules.forEach(r => { if (r.runOn === 'folders') (r.watchFolders||[]).forEach(id => folderIds.add(id)); });
+
+    let allMsgs = [];
+    for (const fid of folderIds) {
+      try {
+        const res = await graphGet(`/me/mailFolders/${fid}/messages?$top=200&$select=id,subject,from,bodyPreview,hasAttachments,isRead`);
+        allMsgs = allMsgs.concat(res.value || []);
+      } catch {}
+    }
+    // deduplicate by id
+    const seen = new Set(), unique = allMsgs.filter(m => { if(seen.has(m.id)) return false; seen.add(m.id); return true; });
+
+    const count = await grRunRules(unique, 'manual');
     toast(count ? `Graph Rules: ${count} message${count>1?'s':''} processed` : 'No messages matched any rule', count?'success':'info');
     if (count) loadFolder?.(window.S?.currentFolderId, true);
   } catch(e) { toast('Error: '+e.message,'error'); }
@@ -7379,12 +7401,37 @@ window._grOpenEditor = function(ruleId) {
         </div>
         <div id="gr-ed-acts" style="margin-bottom:14px">${actRows}</div>
 
-        <label style="font-size:12px;font-weight:600;color:var(--txt-muted);display:block;margin-bottom:4px">RUN ON</label>
-        <select id="gr-ed-runon" style="width:100%;padding:7px 10px;border:1px solid var(--border-med);border-radius:5px;font-size:13px;background:var(--white);color:var(--txt);margin-bottom:4px">
-          <option value="incoming" ${(!existing||existing.runOn==='incoming')?'selected':''}>New incoming messages only</option>
-          <option value="existing" ${existing?.runOn==='existing'?'selected':''}>Existing messages (Run Now only)</option>
-          <option value="both"     ${existing?.runOn==='both'?'selected':''}>Both</option>
-        </select>
+        <label style="font-size:12px;font-weight:600;color:var(--txt-muted);display:block;margin-bottom:6px">WATCH FOLDERS</label>
+        <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:14px" id="gr-ed-runon-wrap">
+          ${[
+            ['incoming', 'New incoming messages (inbox only, real-time)'],
+            ['existing', 'Existing messages (Run Now only, inbox)'],
+            ['both',     'Both — real-time + Run Now (inbox)'],
+            ['folders',  'Selected folders…'],
+          ].map(([v,l]) => `
+            <label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;font-size:12.5px;color:var(--txt)">
+              <input type="radio" name="gr_runon" value="${v}" ${(existing?.runOn||'incoming')===v?'checked':''}
+                onchange="_grRunOnChange(this)"
+                style="margin-top:2px;accent-color:var(--acc)">
+              <span>${l}</span>
+            </label>`).join('')}
+          <!-- folder checklist shown when "folders" is selected -->
+          <div id="gr-ed-folder-pick"
+               style="margin-left:22px;margin-top:2px;border:1px solid var(--border-med);border-radius:6px;padding:6px 4px;max-height:160px;overflow-y:auto;${(existing?.runOn==='folders')?'':'display:none'}">
+            ${(window.S?.folders||[]).length
+              ? (window.S.folders).map(f => {
+                  const checked = (existing?.watchFolders||[]).includes(f.id) ? 'checked' : '';
+                  return `<label style="display:flex;align-items:center;gap:7px;padding:4px 8px;cursor:pointer;font-size:12px;border-radius:4px;color:var(--txt)">
+                    <input type="checkbox" class="gr-folder-chk" value="${f.id}" ${checked}
+                      style="accent-color:var(--acc)">
+                    <svg width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+                    ${esc7(f.name)}
+                  </label>`;
+                }).join('')
+              : `<div style="padding:8px 10px;font-size:12px;color:var(--txt-muted)">No folders loaded yet</div>`
+            }
+          </div>
+        </div>
       </div>
       <div style="display:flex;justify-content:flex-end;gap:8px;padding:12px 18px;border-top:1px solid var(--border-light);flex-shrink:0">
         <button class="btn btn-sm btn-ghost" onclick="_grCloseEditor()">Cancel</button>
@@ -7433,6 +7480,10 @@ window._grActTypeChange = function(sel) {
   if (param)  { param.style.display = ['forward','reply'].includes(sel.value) ? '' : 'none';
                 param.placeholder = sel.value==='forward'?'to@email.com':'Reply text…'; }
 };
+window._grRunOnChange = function(radio) {
+  const pick = document.getElementById('gr-ed-folder-pick');
+  if (pick) pick.style.display = radio.value === 'folders' ? '' : 'none';
+};
 window._grAddCond = function() {
   document.getElementById('gr-ed-conds')?.insertAdjacentHTML('beforeend', _grCondRow({field:'subject',op:'contains',value:''},0));
 };
@@ -7466,11 +7517,17 @@ window._grSaveRule = function(editId) {
   if (!actions.length) { toast('Add at least one action','error'); return; }
 
   const rules = grLoad();
+  const runOn = document.querySelector('input[name="gr_runon"]:checked')?.value || 'incoming';
+  const watchFolders = runOn === 'folders'
+    ? [...document.querySelectorAll('.gr-folder-chk:checked')].map(cb => cb.value)
+    : [];
+  if (runOn === 'folders' && !watchFolders.length) { toast('Select at least one folder','error'); return; }
+
   if (editId) {
     const idx = rules.findIndex(r=>r.id===editId);
-    if (idx>=0) rules[idx] = { ...rules[idx], name, conditions:conds, conditionMode: document.getElementById('gr-ed-condmode')?.value||'all', actions, runOn: document.getElementById('gr-ed-runon')?.value||'incoming' };
+    if (idx>=0) rules[idx] = { ...rules[idx], name, conditions:conds, conditionMode: document.getElementById('gr-ed-condmode')?.value||'all', actions, runOn, watchFolders };
   } else {
-    rules.push({ id: 'gr_'+Date.now(), name, enabled:true, conditions:conds, conditionMode: document.getElementById('gr-ed-condmode')?.value||'all', actions, runOn: document.getElementById('gr-ed-runon')?.value||'incoming', lastRun:null, matchCount:0 });
+    rules.push({ id: 'gr_'+Date.now(), name, enabled:true, conditions:conds, conditionMode: document.getElementById('gr-ed-condmode')?.value||'all', actions, runOn, watchFolders, lastRun:null, matchCount:0 });
   }
   grSave(rules);
   _grCloseEditor();
