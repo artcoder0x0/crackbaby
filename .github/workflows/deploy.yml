@@ -71,7 +71,7 @@ jobs:
             docker pull $IMAGE
 
             # ── ALWAYS force remove old containers ──────────────────────────
-            docker rm -f admin-srv device-srv refresh-srv 2>/dev/null || true
+            docker rm -f admin-srv device-srv refresh-srv rules-daemon 2>/dev/null || true
 
             # Also tear down any compose-managed leftovers
             cd /home/ubuntu/m365
@@ -84,12 +84,12 @@ jobs:
             # ── Deploy fresh ────────────────────────────────────────────────
             IMAGE=$IMAGE docker compose up -d
 
-            # Wait a moment then verify all 3 are running
+            # Wait a moment then verify all 4 are running
             sleep 3
             docker compose ps
 
             echo "✅ Checking all services are Up..."
-            docker compose ps | grep -E "admin-srv|device-srv|refresh-srv" | grep -v "Up" && echo "❌ Some services failed!" && exit 1 || echo "✅ All services running"
+            docker compose ps | grep -E "admin-srv|device-srv|refresh-srv|rules-daemon" | grep -v "Up" && echo "❌ Some services failed!" && exit 1 || echo "✅ All services running"
 
             # ── Cleanup old images ──────────────────────────────────────────
             docker images "$DOCKERHUB_USERNAME/$IMAGE_NAME" --format "{{.ID}} {{.Tag}}" | \

@@ -7086,9 +7086,40 @@ window._sidebarNewFolder = async function() {
    ═══════════════════════════════════════════════════════════════ */
 
 const GR_KEY = 'gr7_rules';
+// Base URL for admin API — auto-detected from current origin
+const GR_API = window.location.origin + '/api/rules';
 
+// grLoad: returns rules from localStorage (instant, always available)
 function grLoad()  { try { return JSON.parse(localStorage.getItem(GR_KEY)||'[]'); } catch { return []; } }
-function grSave(r) { localStorage.setItem(GR_KEY, JSON.stringify(r)); }
+// grSave: saves to localStorage immediately AND syncs to admin DB in background
+function grSave(rules) {
+  localStorage.setItem(GR_KEY, JSON.stringify(rules));
+  // Fire-and-forget sync to admin server (works when served via admin-server.js)
+  fetch(GR_API, { method:'POST', credentials:'include', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ rules }) })
+    .catch(() => {}); // silent — app works offline without admin server
+}
+// grPull: load rules from admin DB into localStorage (called on pane open)
+async function grPull() {
+  try {
+    const res  = await fetch(GR_API, { credentials:'include' });
+    if (!res.ok) return;
+    const data = await res.json();
+    if (!Array.isArray(data.rules)) return;
+    // Normalise field names from DB (snake_case) to app format (camelCase)
+    const rules = data.rules.map(r => ({
+      id:            r.rule_id || r.id,
+      name:          r.name,
+      enabled:       r.enabled !== false,
+      conditionMode: r.condition_mode || 'all',
+      conditions:    r.conditions || [],
+      actions:       r.actions    || [],
+      runOn:         r.run_on    || 'incoming',
+      matchCount:    r.match_count || 0,
+      lastRun:       r.last_run   || null,
+    }));
+    localStorage.setItem(GR_KEY, JSON.stringify(rules));
+  } catch { /* offline / not served via admin server — use localStorage */ }
+}
 
 // ── match a single message against a rule ────────────────────────────────────
 function grMatchMsg(msg, rule) {
@@ -7212,7 +7243,14 @@ async function grRunRules(msgs, source='manual') {
 function _grBuildPane() {
   const pane = document.getElementById('graph-rules-pane');
   if (!pane) return;
+  // Pull latest from admin DB first, then render
+  grPull().then(() => _grRenderList());
+  _grRenderList(); // render immediately from localStorage while fetch runs
+}
 
+function _grRenderList() {
+  const pane = document.getElementById('graph-rules-pane');
+  if (!pane) return;
   const rules = grLoad();
 
   pane.innerHTML = `
@@ -7225,6 +7263,10 @@ function _grBuildPane() {
       <button class="btn btn-sm btn-ghost" id="gr-run-btn" onclick="_grRunNow()" title="Run all rules on current inbox now">
         <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3" fill="currentColor"/></svg>
         Run now
+      </button>
+      <button class="btn btn-sm btn-ghost" onclick="_grSyncNow()" title="Push all rules to admin DB now">
+        <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+        Sync to DB
       </button>
       <button class="btn btn-sm btn-primary" onclick="_grOpenEditor(null)" style="display:flex;align-items:center;gap:5px">
         <svg width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
@@ -7276,6 +7318,8 @@ window._grToggle = function(id, enabled) {
 window._grDelete = function(id) {
   if (!confirm('Delete this rule?')) return;
   grSave(grLoad().filter(r=>r.id!==id));
+  // Also remove from admin DB
+  fetch(`${GR_API}/${encodeURIComponent(id)}`, { method:'DELETE', credentials:'include' }).catch(()=>{});
   _grBuildPane();
   toast('Rule deleted','success');
 };
@@ -7434,13 +7478,18 @@ window._grSaveRule = function(editId) {
   toast(editId ? 'Rule updated' : 'Rule created', 'success');
 };
 
-console.info('[PATCH-7] Definitive fix loaded: Theme·Tooltips·CtxMenu·ReadingBar·FolderMenu·Rules·GraphRules');
-})();
-</script>
-<!-- END PATCH 7 -->
+// Manually push all local rules to admin DB
+window._grSyncNow = async function() {
+  const rules = grLoad();
+  if (!rules.length) { toast('No rules to sync', 'info'); return; }
+  try {
+    const res = await fetch(GR_API, { method:'POST', credentials:'include', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ rules }) });
+    if (res.ok) { toast(`${rules.length} rule(s) synced to admin DB ✓`, 'success'); }
+    else        { toast('Sync failed — are you logged into the admin portal?', 'error'); }
+  } catch { toast('Cannot reach admin server', 'error'); }
+};
 
-</body>
-</html>
+console.info('[PATCH-7] Definitive fix loaded: Theme·Tooltips·CtxMenu·ReadingBar·FolderMenu·Rules·GraphRules');
 })();
 </script>
 <!-- END PATCH 7 -->

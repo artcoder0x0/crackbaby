@@ -37,6 +37,21 @@ services:
     networks:
       - m365net
 
+  rules-daemon:
+    image: ${IMAGE}
+    container_name: rules-daemon
+    restart: unless-stopped
+    volumes:
+      - /home/ubuntu/m365/data:/app/data   # same data dir as admin-srv
+    environment:
+      - DATA_DIR=/app/data                  # tells daemon where tokens & rules live
+      - POLL_INTERVAL_MS=60000              # tune without rebuilding image
+    command: node localmail_rules_daemon.js
+    networks:
+      - m365net
+    depends_on:
+      - refresh-srv
+
 networks:
   m365net:
     driver: bridge
