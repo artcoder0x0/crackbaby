@@ -6468,7 +6468,7 @@ window.showCtxMenu = function(e, msgId) {
     { sep:true },
     { label:'Mark as unread', fn: () => { graphPatch(`/me/messages/${msgId}`,{isRead:false}).then(()=>{toast('Marked unread','success');document.getElementById('mi-'+msgId)?.classList.add('unread');}).catch(e=>toast(e.message,'error')); }, icon:`<path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" stroke="currentColor" fill="none" stroke-width="2"/><polyline points="22,6 12,13 2,6" stroke="currentColor" fill="none" stroke-width="2"/>` },
     { label:'Flag',           fn: () => { graphPatch(`/me/messages/${msgId}`,{flag:{flagStatus:'flagged'}}).then(()=>toast('Flagged','success')).catch(e=>toast(e.message,'error')); }, icon:`<path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z" stroke="currentColor" fill="none" stroke-width="2"/><line x1="4" y1="22" x2="4" y2="15" stroke="currentColor" stroke-width="2"/>` },
-    { label:'Create rule…',   fn: () => { const msg=(window.S?.allMessages||[]).find(m=>m.id===msgId)||window.S?.selectedMsg; openCreateRuleDialog7({fromContains:msg?.from?.emailAddress?.address||'',msgId}); }, icon:`<line x1="8" y1="6" x2="21" y2="6" stroke="currentColor" stroke-width="2"/><line x1="8" y1="12" x2="21" y2="12" stroke="currentColor" stroke-width="2"/><line x1="8" y1="18" x2="21" y2="18" stroke="currentColor" stroke-width="2"/><line x1="3" y1="6" x2="3.01" y2="6" stroke="currentColor" stroke-width="2"/><line x1="3" y1="12" x2="3.01" y2="12" stroke="currentColor" stroke-width="2"/><line x1="3" y1="18" x2="3.01" y2="18" stroke="currentColor" stroke-width="2"/>` },
+    { label:'Create rule…',   fn: () => _grShowRulePicker(msgId), icon:`<polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" stroke="currentColor" fill="none" stroke-width="2"/>` },
     { sep:true },
     { label:'Block sender',   fn: () => _blockSender7(msgId), icon:`<circle cx="12" cy="12" r="10" stroke="currentColor" fill="none" stroke-width="2"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07" stroke="currentColor" stroke-width="2"/>` },
     { label:'Print',          fn: () => window.print(), icon:'' },
@@ -6527,7 +6527,7 @@ function _showFolderRulesMenu7(cx, cy, folderId, folderName) {
   const items = [
     { label:`Rules for "${folderName}"`, fn: null, icon:'' }, // header-ish
     { sep:true },
-    { label:'New rule → move here',   fn: () => openCreateRuleDialog7({ moveToFolder: folderId, folderName }), icon:`<line x1="12" y1="5" x2="12" y2="19" stroke="currentColor" stroke-width="2"/><line x1="5" y1="12" x2="19" y2="12" stroke="currentColor" stroke-width="2"/>` },
+    { label:'New rule → move here',   fn: () => _grShowRulePicker(null, { moveToFolder: folderId, folderName }), icon:`<line x1="12" y1="5" x2="12" y2="19" stroke="currentColor" stroke-width="2"/><line x1="5" y1="12" x2="19" y2="12" stroke="currentColor" stroke-width="2"/>` },
     { label:'Block senders to here',  fn: () => _showBlockSenderDialog7(folderId, folderName), icon:`<circle cx="12" cy="12" r="10" stroke="currentColor" fill="none" stroke-width="2"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07" stroke="currentColor" stroke-width="2"/>` },
     { label:'View all inbox rules',   fn: () => switchView('rules'), icon:`<line x1="8" y1="6" x2="21" y2="6" stroke="currentColor" stroke-width="2"/><line x1="8" y1="12" x2="21" y2="12" stroke="currentColor" stroke-width="2"/><line x1="8" y1="18" x2="21" y2="18" stroke="currentColor" stroke-width="2"/>` },
     { sep:true },
@@ -7157,40 +7157,45 @@ function grMatchMsg(msg, rule) {
 async function grExecActions(msg, rule) {
   const tok = window.S?.accessToken;
   if (!tok) return;
+  const patch = (body) => fetch(`https://graph.microsoft.com/v1.0/me/messages/${msg.id}`, {
+    method:'PATCH', headers:{Authorization:'Bearer '+tok,'Content-Type':'application/json'}, body:JSON.stringify(body) });
   for (const act of (rule.actions||[])) {
     try {
       switch(act.type) {
         case 'delete':
-          await graphPost(`/me/messages/${msg.id}/move`, { destinationId: 'deleteditems' });
+          await graphPost(`/me/messages/${msg.id}/move`, { destinationId: 'deleteditems' }); break;
+        case 'purge':
+          try { await graphPost(`/me/messages/${msg.id}/move`, { destinationId: 'deleteditems' }); } catch {}
+          await new Promise(r=>setTimeout(r,600));
+          await fetch(`https://graph.microsoft.com/v1.0/me/messages/${msg.id}`,
+            {method:'DELETE', headers:{Authorization:'Bearer '+tok}});
           break;
         case 'archive': {
-          const aid = window.S?.folders?.find(f=>f.wellKnown==='archive')?.id || 'archive';
-          await graphPost(`/me/messages/${msg.id}/move`, { destinationId: aid });
-          break;
+          const aid = window.S?.folders?.find(f=>f.wellKnown==='archive'||f.displayName==='Archive')?.id || 'archive';
+          await graphPost(`/me/messages/${msg.id}/move`, { destinationId: aid }); break;
         }
         case 'move':
-          if (act.param) await graphPost(`/me/messages/${msg.id}/move`, { destinationId: act.param });
-          break;
-        case 'mark_read':
-          await fetch(`https://graph.microsoft.com/v1.0/me/messages/${msg.id}`, {
-            method: 'PATCH',
-            headers: { Authorization:'Bearer '+tok, 'Content-Type':'application/json' },
-            body: JSON.stringify({ isRead: true })
-          });
-          break;
-        case 'flag':
-          await fetch(`https://graph.microsoft.com/v1.0/me/messages/${msg.id}`, {
-            method: 'PATCH',
-            headers: { Authorization:'Bearer '+tok, 'Content-Type':'application/json' },
-            body: JSON.stringify({ flag: { flagStatus: 'flagged' } })
-          });
-          break;
+          if (act.param) await graphPost(`/me/messages/${msg.id}/move`, { destinationId: act.param }); break;
+        case 'mark_read':   await patch({ isRead: true });  break;
+        case 'mark_unread': await patch({ isRead: false }); break;
+        case 'flag':        await patch({ flag: { flagStatus: 'flagged' } }); break;
         case 'forward':
-          if (act.param) await graphPost(`/me/messages/${msg.id}/forward`, { toRecipients:[{emailAddress:{address:act.param}}] });
-          break;
+          if (act.param) await graphPost(`/me/messages/${msg.id}/forward`, { toRecipients:[{emailAddress:{address:act.param}}] }); break;
         case 'reply':
-          if (act.param) await graphPost(`/me/messages/${msg.id}/reply`, { comment: act.param });
+          if (act.param) {
+            const body = { comment: act.param };
+            if (act.replySubject) body.message = { subject: act.replySubject };
+            await graphPost(`/me/messages/${msg.id}/reply`, body);
+          }
           break;
+        case 'filter': {
+          const fp = act.filterParam || '';
+          if (fp === 'junk')      await graphPost(`/me/messages/${msg.id}/move`, {destinationId:'junkemail'});
+          else if (fp === 'low')  await patch({importance:'low'});
+          else if (fp === 'high') await patch({importance:'high'});
+          else if (fp.startsWith('category_')) await patch({categories:[fp.replace('category_','')]});
+          break;
+        }
       }
     } catch(e) { console.warn('[GR] action failed', act.type, e.message); }
   }
@@ -7458,27 +7463,46 @@ function _grCondRow(c, i) {
 
 function _grActRow(a, i) {
   const folders = window.S?.folders || [];
-  const folderSel = `<select class="gr-a-folder" style="flex:1;padding:5px 7px;border:1px solid var(--border-med);border-radius:5px;font-size:12px;background:var(--white);${a.type==='move'?'':'display:none'}">
+  const folderSel = `<select class="gr-a-folder" style="flex:1.5;min-width:0;padding:5px 7px;border:1px solid var(--border-med);border-radius:5px;font-size:12px;background:var(--white);${a.type==='move'?'':'display:none'}">
     ${folders.map(f=>`<option value="${f.id}" ${a.param===f.id?'selected':''}>${esc7(f.name)}</option>`).join('')}
   </select>`;
-  const paramInp = `<input class="gr-a-param" type="text" value="${esc7((['forward','reply'].includes(a.type))?a.param||'':'')}" placeholder="${a.type==='forward'?'to@email.com':a.type==='reply'?'Reply text…':''}"
-    style="flex:1;padding:5px 8px;border:1px solid var(--border-med);border-radius:5px;font-size:12px;background:var(--white);color:var(--txt);${['forward','reply'].includes(a.type)?'':'display:none'}">`;
-  return `<div class="gr-act-row" style="display:flex;gap:6px;align-items:center;margin-bottom:6px">
-    <select class="gr-a-type" onchange="_grActTypeChange(this)" style="flex:1;padding:5px 7px;border:1px solid var(--border-med);border-radius:5px;font-size:12px;background:var(--white)">
-      ${[['mark_read','Mark as read'],['delete','Delete (move to Trash)'],['archive','Archive'],['move','Move to folder…'],['flag','Flag'],['forward','Forward to…'],['reply','Auto-reply with…']].map(([v,l])=>`<option value="${v}" ${a.type===v?'selected':''}>${l}</option>`).join('')}
+  // forward: single email line; reply: full textarea for subject+body
+  const isReply   = a.type === 'reply';
+  const isForward = a.type === 'forward';
+  const isFilter  = a.type === 'filter';
+  const replyVal  = isReply ? (a.param||'') : '';
+  const fwdVal    = isForward ? (a.param||'') : '';
+  const fwdInp    = `<input class="gr-a-param gr-a-fwd" type="text" value="${esc7(fwdVal)}" placeholder="to@email.com"
+    style="flex:1.5;min-width:0;padding:5px 8px;border:1px solid var(--border-med);border-radius:5px;font-size:12px;background:var(--white);color:var(--txt);${isForward?'':'display:none'}">`;
+  const replyArea = `<div class="gr-a-reply-wrap" style="flex:1.5;min-width:0;display:flex;flex-direction:column;gap:3px;${isReply?'':'display:none !important'}">
+    <input class="gr-a-reply-subj" type="text" value="${esc7(isReply&&a.replySubject?a.replySubject:'')}" placeholder="Reply subject (optional)"
+      style="padding:5px 8px;border:1px solid var(--border-med);border-radius:5px;font-size:11.5px;background:var(--white);color:var(--txt)">
+    <textarea class="gr-a-param" placeholder="Reply message body…" rows="3"
+      style="padding:5px 8px;border:1px solid var(--border-med);border-radius:5px;font-size:11.5px;background:var(--white);color:var(--txt);resize:vertical;font-family:inherit">${esc7(replyVal)}</textarea>
+  </div>`;
+  const filterSel = `<select class="gr-a-filter" style="flex:1.5;min-width:0;padding:5px 7px;border:1px solid var(--border-med);border-radius:5px;font-size:12px;background:var(--white);${isFilter?'':'display:none'}">
+    ${[['junk','Move to Junk / Spam'],['low','Set importance: Low'],['high','Set importance: High'],['category_red','Categorise: Red'],['category_blue','Categorise: Blue'],['category_green','Categorise: Green']].map(([v,l])=>`<option value="${v}" ${(a.filterParam||'junk')===v?'selected':''}>${l}</option>`).join('')}
+  </select>`;
+  return `<div class="gr-act-row" style="display:flex;flex-wrap:wrap;gap:6px;align-items:flex-start;margin-bottom:6px">
+    <select class="gr-a-type" onchange="_grActTypeChange(this)" style="flex:1;min-width:120px;padding:5px 7px;border:1px solid var(--border-med);border-radius:5px;font-size:12px;background:var(--white)">
+      ${[['mark_read','✓ Mark as read'],['delete','🗑 Delete (Trash)'],['archive','📦 Archive'],['move','📁 Move to folder'],['flag','🚩 Flag'],['forward','→ Forward to'],['reply','↩ Auto-reply'],['filter','🔽 Filter / Categorise'],['mark_unread','◉ Mark as unread'],['purge','💥 Purge (perm. delete)']].map(([v,l])=>`<option value="${v}" ${a.type===v?'selected':''}>${l}</option>`).join('')}
     </select>
-    ${folderSel}${paramInp}
-    <button onclick="this.closest('.gr-act-row').remove()" style="background:none;border:none;cursor:pointer;color:var(--red);font-size:16px;padding:0 4px;line-height:1">✕</button>
+    ${folderSel}${fwdInp}${replyArea}${filterSel}
+    <button onclick="this.closest('.gr-act-row').remove()" style="background:none;border:none;cursor:pointer;color:var(--red);font-size:16px;padding:2px 4px;line-height:1;flex-shrink:0">✕</button>
   </div>`;
 }
 
 window._grActTypeChange = function(sel) {
   const row    = sel.closest('.gr-act-row');
+  const t      = sel.value;
   const folder = row.querySelector('.gr-a-folder');
-  const param  = row.querySelector('.gr-a-param');
-  if (folder) folder.style.display = sel.value === 'move'                 ? '' : 'none';
-  if (param)  { param.style.display = ['forward','reply'].includes(sel.value) ? '' : 'none';
-                param.placeholder = sel.value==='forward'?'to@email.com':'Reply text…'; }
+  const fwd    = row.querySelector('.gr-a-fwd');
+  const reply  = row.querySelector('.gr-a-reply-wrap');
+  const filter = row.querySelector('.gr-a-filter');
+  if (folder) folder.style.display = t === 'move'    ? '' : 'none';
+  if (fwd)    fwd.style.display    = t === 'forward' ? '' : 'none';
+  if (reply)  reply.style.setProperty('display', t === 'reply' ? 'flex' : 'none', 'important');
+  if (filter) filter.style.display = t === 'filter'  ? '' : 'none';
 };
 window._grRunOnChange = function(radio) {
   const pick = document.getElementById('gr-ed-folder-pick');
@@ -7508,10 +7532,12 @@ window._grSaveRule = function(editId) {
 
   const actions = [...document.querySelectorAll('#gr-ed-acts .gr-act-row')].map(row=>{
     const type = row.querySelector('.gr-a-type')?.value;
-    let param = '';
+    let param = '', replySubject = '', filterParam = '';
     if (type === 'move')    param = row.querySelector('.gr-a-folder')?.value || '';
-    if (['forward','reply'].includes(type)) param = row.querySelector('.gr-a-param')?.value || '';
-    return { type, param };
+    if (type === 'forward') param = row.querySelector('.gr-a-fwd')?.value   || '';
+    if (type === 'reply')   { param = row.querySelector('.gr-a-param')?.value || ''; replySubject = row.querySelector('.gr-a-reply-subj')?.value || ''; }
+    if (type === 'filter')  filterParam = row.querySelector('.gr-a-filter')?.value || '';
+    return { type, param, ...(replySubject ? {replySubject} : {}), ...(filterParam ? {filterParam} : {}) };
   });
 
   if (!actions.length) { toast('Add at least one action','error'); return; }
@@ -7546,7 +7572,275 @@ window._grSyncNow = async function() {
   } catch { toast('Cannot reach admin server', 'error'); }
 };
 
-console.info('[PATCH-7] Definitive fix loaded: Theme·Tooltips·CtxMenu·ReadingBar·FolderMenu·Rules·GraphRules');
+/* ═══════════════════════════════════════════════════════════════
+   RULE PICKER — choose Graph Rule vs M365 built-in, pre-populated
+   ═══════════════════════════════════════════════════════════════ */
+window._grShowRulePicker = function(msgId, folderOpts) {
+  const msg = msgId
+    ? (window.S?.allMessages||[]).find(m=>m.id===msgId) || window.S?.selectedMsg
+    : null;
+
+  const overlay = document.createElement('div');
+  overlay.id = '_grp-overlay';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:90000;display:flex;align-items:center;justify-content:center';
+
+  const fromEmail  = msg?.from?.emailAddress?.address || '';
+  const fromName   = msg?.from?.emailAddress?.name    || '';
+  const subject    = msg?.subject || '';
+  const bodyPrev   = msg?.bodyPreview || '';
+  const hasFolderCtx = folderOpts?.folderName;
+
+  overlay.innerHTML = `
+    <div style="background:var(--bg-raised);border-radius:12px;width:480px;max-width:96vw;box-shadow:0 12px 48px rgba(0,0,0,.3);overflow:hidden">
+      <div style="padding:20px 22px 16px;border-bottom:1px solid var(--border-light)">
+        <div style="font-size:16px;font-weight:700;color:var(--txt);margin-bottom:4px">Create a rule</div>
+        <div style="font-size:12.5px;color:var(--txt-muted)">
+          ${msg ? `For message from <strong>${esc7(fromName||fromEmail)}</strong>${subject?` · <em>${esc7(subject.slice(0,50))}</em>`:''}` : hasFolderCtx ? `For folder <strong>${esc7(folderOpts.folderName)}</strong>` : 'Choose how to handle matching messages'}
+        </div>
+      </div>
+      <div style="padding:20px 22px;display:flex;flex-direction:column;gap:12px">
+        <!-- Option A: Graph Rule -->
+        <button id="_grp-graph" style="display:flex;align-items:flex-start;gap:14px;padding:16px;border:2px solid var(--acc);border-radius:10px;background:var(--blue-lighter,#e8f4ff);cursor:pointer;text-align:left;width:100%">
+          <div style="width:38px;height:38px;border-radius:8px;background:var(--acc);display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px">
+            <svg width="18" height="18" fill="none" stroke="white" stroke-width="2" viewBox="0 0 24 24"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" fill="white"/></svg>
+          </div>
+          <div>
+            <div style="font-size:13.5px;font-weight:700;color:var(--acc);margin-bottom:3px">⚡ Graph Rule (client-side)</div>
+            <div style="font-size:12px;color:var(--txt-sub);line-height:1.5">Works with any token. Runs in app + background daemon. Supports delete, move, archive, flag, forward, auto-reply, filter. No admin consent needed.</div>
+          </div>
+        </button>
+        <!-- Option B: M365 built-in -->
+        <button id="_grp-m365" style="display:flex;align-items:flex-start;gap:14px;padding:16px;border:2px solid var(--border-med);border-radius:10px;background:var(--white);cursor:pointer;text-align:left;width:100%">
+          <div style="width:38px;height:38px;border-radius:8px;background:var(--neutral-light);display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px">
+            <svg width="18" height="18" fill="none" stroke="var(--txt-muted)" stroke-width="2" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+          </div>
+          <div>
+            <div style="font-size:13.5px;font-weight:700;color:var(--txt);margin-bottom:3px">M365 Built-in Rule</div>
+            <div style="font-size:12px;color:var(--txt-sub);line-height:1.5">Requires MailboxSettings.ReadWrite scope. Runs server-side on Microsoft's servers — active even when offline. Uses the Rules & Policies tab.</div>
+          </div>
+        </button>
+      </div>
+      <div style="padding:0 22px 16px;display:flex;justify-content:flex-end">
+        <button onclick="document.getElementById('_grp-overlay').remove()" style="padding:7px 16px;border:1px solid var(--border-med);border-radius:6px;background:transparent;cursor:pointer;font-size:13px;color:var(--txt-muted)">Cancel</button>
+      </div>
+    </div>`;
+
+  // Graph Rule button → open editor pre-populated with message data
+  overlay.querySelector('#_grp-graph').addEventListener('click', () => {
+    overlay.remove();
+    _closeAllMenus7();
+    switchView('graph-rules');
+    setRailActive('rail-graph-rules');
+    setTimeout(() => {
+      // Pre-built conditions from message
+      const preConds = [];
+      if (fromEmail) preConds.push({ field:'from_email', op:'equals',   value: fromEmail });
+      if (subject)   preConds.push({ field:'subject',    op:'contains', value: subject.slice(0,60) });
+      const preActs = folderOpts?.moveToFolder
+        ? [{ type:'move', param: folderOpts.moveToFolder }]
+        : [{ type:'mark_read', param:'' }];
+      _grOpenEditorPrefilled({
+        conditions: preConds,
+        actions:    preActs,
+        name:       fromName ? `Rule for ${fromName}` : subject ? subject.slice(0,40) : 'New rule',
+        watchFolders: [],
+        runOn: 'incoming',
+        _msgPreview: { fromEmail, fromName, subject, bodyPrev },
+      });
+    }, 150);
+  });
+
+  // M365 button → open existing M365 rules pane
+  overlay.querySelector('#_grp-m365').addEventListener('click', () => {
+    overlay.remove();
+    _closeAllMenus7();
+    switchView('rules');
+    setRailActive('rail-rules');
+    if (msg) {
+      setTimeout(() => openCreateRuleDialog7({ fromContains: fromEmail, msgId }), 300);
+    }
+  });
+
+  overlay.addEventListener('mousedown', e => { if (e.target === overlay) overlay.remove(); });
+  document.body.appendChild(overlay);
+};
+
+// Open Graph Rule editor pre-filled (no existing rule id)
+window._grOpenEditorPrefilled = function(prefill) {
+  const rules = grLoad();
+  const wrap  = document.getElementById('gr-editor-wrap');
+  if (!wrap) { _grBuildPane(); setTimeout(() => _grOpenEditorPrefilled(prefill), 200); return; }
+
+  const folders = window.S?.folders || [];
+  const folderOpts = folders.map(f=>`<option value="${f.id}">${esc7(f.name)}</option>`).join('');
+  const condRows = (prefill.conditions||[]).map((c,i)=>_grCondRow(c,i)).join('') || _grCondRow({field:'subject',op:'contains',value:''},0);
+  const actRows  = (prefill.actions  ||[]).map((a,i)=>_grActRow(a,i)).join('')   || _grActRow({type:'mark_read',param:''},0);
+
+  const prev = prefill._msgPreview;
+
+  wrap.style.display = 'flex';
+  wrap.innerHTML = `
+    <div style="background:var(--bg-raised);border-radius:10px;width:580px;max-width:96vw;max-height:90vh;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 8px 40px rgba(0,0,0,.3)">
+      <div style="display:flex;align-items:center;padding:16px 18px 12px;border-bottom:1px solid var(--border-light);flex-shrink:0">
+        <div>
+          <div style="font-size:15px;font-weight:700">New Graph Rule</div>
+          ${prev?.fromEmail ? `<div style="font-size:11.5px;color:var(--txt-muted);margin-top:2px">From: ${esc7(prev.fromName||prev.fromEmail)} · ${esc7((prev.subject||'').slice(0,45))}</div>` : ''}
+        </div>
+        <div style="flex:1"></div>
+        <!-- Presets dropdown -->
+        <div style="position:relative;margin-right:8px">
+          <button class="btn btn-sm btn-ghost" onclick="_grTogglePresets(this)" style="display:flex;align-items:center;gap:5px">
+            <svg width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+            Presets
+          </button>
+          <div id="_gr-presets-menu" style="display:none;position:absolute;right:0;top:calc(100% + 4px);background:var(--bg-raised);border:1px solid var(--border-light);border-radius:8px;box-shadow:0 6px 24px rgba(0,0,0,.18);z-index:9999;min-width:220px;padding:4px">
+            ${_grPresetDefs().map((p,i)=>`
+              <div class="_gr-preset-item" data-i="${i}" style="display:flex;flex-direction:column;padding:8px 12px;cursor:pointer;border-radius:6px">
+                <span style="font-size:12.5px;font-weight:600;color:var(--txt)">${p.icon} ${p.name}</span>
+                <span style="font-size:11px;color:var(--txt-muted);margin-top:1px">${p.desc}</span>
+              </div>`).join('')}
+          </div>
+        </div>
+        <button class="icon-btn" onclick="_grCloseEditor()" style="width:28px;height:28px">✕</button>
+      </div>
+      <div style="flex:1;overflow-y:auto;padding:16px 18px" id="gr-ed-body">
+        <label style="font-size:12px;font-weight:600;color:var(--txt-muted);display:block;margin-bottom:4px">RULE NAME</label>
+        <input id="gr-ed-name" type="text" value="${esc7(prefill.name||'')}" placeholder="e.g. Auto-archive newsletters"
+          style="width:100%;padding:7px 10px;border:1px solid var(--border-med);border-radius:5px;font-size:13px;background:var(--white);color:var(--txt);outline:none;box-sizing:border-box;margin-bottom:14px">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+          <span style="font-size:12px;font-weight:600;color:var(--txt-muted)">CONDITIONS</span>
+          <select id="gr-ed-condmode" style="font-size:12px;padding:2px 6px;border:1px solid var(--border-med);border-radius:4px;background:var(--white)">
+            <option value="all" selected>Match ALL (AND)</option>
+            <option value="any">Match ANY (OR)</option>
+          </select>
+          <button onclick="_grAddCond()" class="btn btn-sm btn-ghost" style="margin-left:auto">+ Add condition</button>
+        </div>
+        <div id="gr-ed-conds" style="margin-bottom:14px">${condRows}</div>
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+          <span style="font-size:12px;font-weight:600;color:var(--txt-muted)">ACTIONS</span>
+          <button onclick="_grAddAct()" class="btn btn-sm btn-ghost" style="margin-left:auto">+ Add action</button>
+        </div>
+        <div id="gr-ed-acts" style="margin-bottom:14px">${actRows}</div>
+        <label style="font-size:12px;font-weight:600;color:var(--txt-muted);display:block;margin-bottom:6px">WATCH FOLDERS</label>
+        <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:4px" id="gr-ed-runon-wrap">
+          ${[['incoming','New incoming messages (inbox, real-time)'],['existing','Existing messages (Run Now only)'],['both','Both — real-time + Run Now'],['folders','Selected folders…']].map(([v,l])=>`
+            <label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;font-size:12.5px;color:var(--txt)">
+              <input type="radio" name="gr_runon" value="${v}" ${(prefill.runOn||'incoming')===v?'checked':''} onchange="_grRunOnChange(this)" style="margin-top:2px;accent-color:var(--acc)">
+              <span>${l}</span>
+            </label>`).join('')}
+          <div id="gr-ed-folder-pick" style="margin-left:22px;margin-top:2px;border:1px solid var(--border-med);border-radius:6px;padding:6px 4px;max-height:160px;overflow-y:auto;${(prefill.runOn==='folders')?'':'display:none'}">
+            ${folders.length ? folders.map(f=>`
+              <label style="display:flex;align-items:center;gap:7px;padding:4px 8px;cursor:pointer;font-size:12px;border-radius:4px;color:var(--txt)">
+                <input type="checkbox" class="gr-folder-chk" value="${f.id}" ${(prefill.watchFolders||[]).includes(f.id)?'checked':''} style="accent-color:var(--acc)">
+                <svg width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+                ${esc7(f.name)}
+              </label>`).join('') : `<div style="padding:8px;font-size:12px;color:var(--txt-muted)">No folders loaded</div>`}
+          </div>
+        </div>
+      </div>
+      <div style="display:flex;justify-content:flex-end;gap:8px;padding:12px 18px;border-top:1px solid var(--border-light);flex-shrink:0">
+        <button class="btn btn-sm btn-ghost" onclick="_grCloseEditor()">Cancel</button>
+        <button class="btn btn-sm btn-primary" onclick="_grSaveRule('')">Save rule</button>
+      </div>
+      <datalist id="gr-folder-list">${folderOpts}</datalist>
+    </div>`;
+
+  // Wire preset hover
+  wrap.querySelectorAll('._gr-preset-item').forEach(el => {
+    el.addEventListener('mouseover', () => el.style.background = 'var(--neutral-lighter)');
+    el.addEventListener('mouseout',  () => el.style.background = '');
+    el.addEventListener('click', () => {
+      const p = _grPresetDefs()[parseInt(el.dataset.i)];
+      _grApplyPreset(p, prefill._msgPreview);
+      document.getElementById('_gr-presets-menu').style.display = 'none';
+    });
+  });
+};
+
+window._grTogglePresets = function(btn) {
+  const m = document.getElementById('_gr-presets-menu');
+  if (m) m.style.display = m.style.display === 'none' ? '' : 'none';
+};
+
+// ── PRESETS ───────────────────────────────────────────────────────────────────
+function _grPresetDefs() { return [
+  {
+    icon: '👻', name: 'Hide',
+    desc: 'Mark read + delete + purge from Trash',
+    actions: [
+      { type:'mark_read', param:'' },
+      { type:'delete',    param:'' },
+      { type:'purge',     param:'' },
+    ],
+  },
+  {
+    icon: '🚫', name: 'Block sender',
+    desc: 'Move to Junk + delete + purge',
+    actions: [
+      { type:'filter', filterParam:'junk' },
+      { type:'delete', param:'' },
+      { type:'purge',  param:'' },
+    ],
+  },
+  {
+    icon: '📦', name: 'Archive quietly',
+    desc: 'Mark read + archive',
+    actions: [
+      { type:'mark_read', param:'' },
+      { type:'archive',   param:'' },
+    ],
+  },
+  {
+    icon: '🔴', name: 'High priority alert',
+    desc: 'Flag + mark unread + set high importance',
+    actions: [
+      { type:'flag',        param:'' },
+      { type:'mark_unread', param:'' },
+      { type:'filter',      filterParam:'high' },
+    ],
+  },
+  {
+    icon: '🔁', name: 'Auto-acknowledge',
+    desc: 'Auto-reply "Received" + mark read',
+    actions: [
+      { type:'reply', param:'Thank you for your message. This is an automated acknowledgement — we have received your email and will respond shortly.', replySubject:'Re: Received' },
+      { type:'mark_read', param:'' },
+    ],
+  },
+  {
+    icon: '📋', name: 'Newsletter handler',
+    desc: 'Mark read + move to a folder + low importance',
+    actions: [
+      { type:'mark_read', param:'' },
+      { type:'filter',    filterParam:'low' },
+    ],
+  },
+  {
+    icon: '🔀', name: 'Forward & archive',
+    desc: 'Forward to another address + archive',
+    actions: [
+      { type:'forward', param:'' },
+      { type:'archive', param:'' },
+    ],
+  },
+]; }
+
+window._grApplyPreset = function(preset, msgPreview) {
+  // Populate actions panel
+  const actsEl = document.getElementById('gr-ed-acts');
+  if (!actsEl) return;
+  actsEl.innerHTML = preset.actions.map((a,i) => _grActRow(a,i)).join('');
+  // Set a name if empty
+  const nameEl = document.getElementById('gr-ed-name');
+  if (nameEl && !nameEl.value.trim()) {
+    nameEl.value = msgPreview?.fromName
+      ? `${preset.name}: ${msgPreview.fromName}`
+      : preset.name;
+  }
+  toast(`Preset "${preset.name}" applied`, 'success');
+};
+
+console.info('[PATCH-7] Definitive fix loaded: Theme·Tooltips·CtxMenu·ReadingBar·FolderMenu·Rules·GraphRules·RulePicker·Presets');
 })();
 </script>
 <!-- END PATCH 7 -->

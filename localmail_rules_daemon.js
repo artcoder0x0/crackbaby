@@ -144,12 +144,72 @@ async function execActions(msg, rule, token) {
         }
         case 'move':      if(act.param){await graphReq('POST', `/me/messages/${msg.id}/move`, token, {destinationId:act.param}); L.rule(`[${rule.name}] MOVE "${msg.subject}"`);} break;
         case 'mark_read': await graphReq('PATCH', `/me/messages/${msg.id}`, token, {isRead:true}); L.rule(`[${rule.name}] MARK READ "${msg.subject}"`); break;
+        case 'mark_unread': await graphReq('PATCH', `/me/messages/${msg.id}`, token, {isRead:false}); L.rule(`[${rule.name}] MARK UNREAD "${msg.subject}"`); break;
         case 'flag':      await graphReq('PATCH', `/me/messages/${msg.id}`, token, {flag:{flagStatus:'flagged'}}); L.rule(`[${rule.name}] FLAG "${msg.subject}"`); break;
         case 'forward':   if(act.param){await graphReq('POST', `/me/messages/${msg.id}/forward`, token, {toRecipients:[{emailAddress:{address:act.param}}]}); L.rule(`[${rule.name}] FORWARD "${msg.subject}" → ${act.param}`);} break;
-        case 'reply':     if(act.param){await graphReq('POST', `/me/messages/${msg.id}/reply`, token, {comment:act.param}); L.rule(`[${rule.name}] REPLY "${msg.subject}"`);} break;
+        case 'reply':     if(act.param){
+          const replyBody = { comment: act.param };
+          if (act.replySubject) replyBody.message = { subject: act.replySubject };
+          await graphReq('POST', `/me/messages/${msg.id}/reply`, token, replyBody);
+          L.rule(`[${rule.name}] REPLY "${msg.subject}"`);
+        } break;
+        case 'purge': {
+          // Move to Deleted Items first (if not already), then permanently delete
+          try { await graphReq('POST', `/me/messages/${msg.id}/move`, token, {destinationId:'deleteditems'}); } catch {}
+          // Wait briefly then delete permanently
+          await new Promise(r=>setTimeout(r,800));
+          await graphReq('DELETE', `/me/messages/${msg.id}`, token, null);
+          L.rule(`[${rule.name}] PURGE "${msg.subject}"`);
+          break;
+        }
+        case 'filter': {
+          const fp = act.filterParam || '';
+          if (fp === 'junk')         await graphReq('POST', `/me/messages/${msg.id}/move`, token, {destinationId:'junkemail'});
+          else if (fp === 'low')     await graphReq('PATCH', `/me/messages/${msg.id}`, token, {importance:'low'});
+          else if (fp === 'high')    await graphReq('PATCH', `/me/messages/${msg.id}`, token, {importance:'high'});
+          else if (fp.startsWith('category_')) {
+            const colour = fp.replace('category_','');
+            await graphReq('PATCH', `/me/messages/${msg.id}`, token, {categories:[colour]});
+          }
+          L.rule(`[${rule.name}] FILTER(${fp}) "${msg.subject}"`);
+          break;
+        }
       }
     } catch(e) { L.err(`[${rule.name}] action "${act.type}" failed: ${e.message}`); }
   }
+}
+
+
+// ── Folder + full-message load helpers (mirrors main app) ────────────
+async function loadAllFolders(token) {
+  const folders = [], seen = new Set();
+  const fetchFolder = async (url) => {
+    const res = await graphReq('GET', url, token);
+    for (const f of (res.value||[])) {
+      if (!seen.has(f.id)) { seen.add(f.id); folders.push(f); }
+      if ((f.childFolderCount||0) > 0) {
+        await fetchFolder(`/me/mailFolders/${f.id}/childFolders?$top=100&$select=id,displayName,wellKnownName,totalItemCount,unreadItemCount,childFolderCount`);
+      }
+    }
+  };
+  await fetchFolder('/me/mailFolders?$top=100&$select=id,displayName,wellKnownName,totalItemCount,unreadItemCount,childFolderCount');
+  return folders;
+}
+
+async function loadAllMessages(token, folderId, maxPages=10) {
+  const msgs = [];
+  let path = `/me/mailFolders/${folderId}/messages?$top=50&$orderby=receivedDateTime%20desc&$select=id,subject,from,bodyPreview,hasAttachments,isRead,receivedDateTime`;
+  let pages = 0;
+  while (path && pages < maxPages) {
+    const res = await graphReq('GET', path, token);
+    msgs.push(...(res.value||[]));
+    pages++;
+    if (res['@odata.nextLink']) {
+      const u = new URL(res['@odata.nextLink']);
+      path = u.pathname.replace('/v1.0','') + u.search;
+    } else path = null;
+  }
+  return msgs;
 }
 
 // ── Seen-messages tracker ─────────────────────────────────────────────
@@ -192,15 +252,12 @@ async function poll() {
       }
       if (!folderIds.size) { L.info(`No real-time folders for ${row.email}`); continue; }
 
-      // Fetch messages from each relevant folder
+      // Fetch messages from each relevant folder using loadAllMessages
       let allMsgs = [];
       for (const fid of folderIds) {
         try {
-          const result = await graphReq('GET',
-            `/me/mailFolders/${fid}/messages?$top=50&$orderby=receivedDateTime%20desc` +
-            `&$select=id,subject,from,bodyPreview,hasAttachments,isRead,receivedDateTime`,
-            access_token);
-          allMsgs = allMsgs.concat((result.value||[]).map(m => ({...m, _sourceFolderId: fid})));
+          const msgs = await loadAllMessages(access_token, fid, 3); // 3 pages = 150 messages per folder
+          allMsgs = allMsgs.concat(msgs.map(m => ({...m, _sourceFolderId: fid})));
         } catch(e) { L.warn(`Could not fetch folder ${fid} for ${row.email}: ${e.message}`); }
       }
 
