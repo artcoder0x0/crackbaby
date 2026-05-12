@@ -181,19 +181,63 @@ async function execActions(msg, rule, token) {
 
 
 // ── Folder + full-message load helpers (mirrors main app) ────────────
+// Mirrors app's loadAllFoldersRecursive exactly:
+// returns a flat array with id, displayName, wellKnownName,
+// childFolderCount, children[], depth, parentId.
+// Used by poll loop to resolve watchFolders by ID.
 async function loadAllFolders(token) {
-  const folders = [], seen = new Set();
-  const fetchFolder = async (url) => {
-    const res = await graphReq('GET', url, token);
-    for (const f of (res.value||[])) {
-      if (!seen.has(f.id)) { seen.add(f.id); folders.push(f); }
-      if ((f.childFolderCount||0) > 0) {
-        await fetchFolder(`/me/mailFolders/${f.id}/childFolders?$top=100&$select=id,displayName,wellKnownName,totalItemCount,unreadItemCount,childFolderCount`);
+  const allFolders = [], folderMap = {};
+
+  async function fetchChildrenOf(parentId, depth) {
+    let skip = 0;
+    while (true) {
+      const res = await graphReq('GET',
+        `/me/mailFolders/${encodeURIComponent(parentId)}/childFolders` +
+        `?$top=100&$skip=${skip}&$select=id,displayName,unreadItemCount,totalItemCount,childFolderCount`,
+        token).catch(() => null);
+      if (!res) break;
+      const items = res.value || [];
+      for (const f of items) {
+        const node = {
+          id: f.id, name: f.displayName,
+          unreadCount: f.unreadItemCount || 0,
+          totalCount:  f.totalItemCount  || 0,
+          childFolderCount: f.childFolderCount || 0,
+          children: [], depth, parentId,
+        };
+        allFolders.push(node);
+        folderMap[f.id] = node;
+        const parent = folderMap[parentId];
+        if (parent) parent.children.push(node);
+        if (f.childFolderCount > 0) await fetchChildrenOf(f.id, depth + 1);
       }
+      if (items.length < 100) break;
+      skip += 100;
     }
-  };
-  await fetchFolder('/me/mailFolders?$top=100&$select=id,displayName,wellKnownName,totalItemCount,unreadItemCount,childFolderCount');
-  return folders;
+  }
+
+  // Top-level folders
+  let skip = 0;
+  while (true) {
+    const res = await graphReq('GET',
+      `/me/mailFolders?$top=100&$skip=${skip}&$select=id,displayName,unreadItemCount,totalItemCount,childFolderCount`,
+      token).catch(() => null);
+    if (!res) break;
+    for (const f of (res.value||[])) {
+      const node = { id:f.id, name:f.displayName, unreadCount:f.unreadItemCount||0, totalCount:f.totalItemCount||0, childFolderCount:f.childFolderCount||0, children:[], depth:0, parentId:null };
+      allFolders.push(node);
+      folderMap[f.id] = node;
+    }
+    if ((res.value||[]).length < 100) break;
+    skip += 100;
+  }
+
+  // Recurse into all top-level folders with children
+  for (const node of allFolders.filter(n => n.depth === 0 && n.childFolderCount > 0)) {
+    await fetchChildrenOf(node.id, 1);
+  }
+
+  return { all: allFolders, map: folderMap };
 }
 
 async function loadAllMessages(token, folderId, maxPages=10) {
@@ -243,12 +287,27 @@ async function poll() {
         .map(r => ({...r, enabled:true, conditions:JSON.parse(r.conditions||'[]'), actions:JSON.parse(r.actions||'[]'), watchFolders:JSON.parse(r.watch_folders||r.watchFolders||'[]')}));
       if (!rules.length) { L.info(`No enabled rules for ${row.email}`); continue; }
 
+      // Load full folder tree (same logic as app) — resolves IDs, nested folders
+      let folderMap = {};
+      try {
+        const { map } = await loadAllFolders(access_token);
+        folderMap = map;
+        L.info(`${row.email}: loaded ${Object.keys(map).length} folders`);
+      } catch(e) { L.warn(`Could not load folders for ${row.email}: ${e.message}`); }
+
+      // Resolve 'inbox' well-known to real ID
+      const resolveId = (id) => {
+        if (id !== 'inbox' && id !== 'archive' && id !== 'junkemail') return id;
+        const match = Object.values(folderMap).find(f => f.name?.toLowerCase() === id || f.id === id);
+        return match?.id || id;
+      };
+
       // Collect unique folder IDs across all rules (skip 'existing'-only rules for real-time)
       const folderIds = new Set();
       for (const rule of rules) {
         if (rule.run_on === 'existing') continue;
-        if (rule.run_on === 'folders' && rule.watchFolders.length) rule.watchFolders.forEach(id => folderIds.add(id));
-        else folderIds.add('inbox'); // 'incoming' and 'both' default to inbox
+        if (rule.run_on === 'folders' && rule.watchFolders.length) rule.watchFolders.forEach(id => folderIds.add(resolveId(id)));
+        else folderIds.add('inbox');
       }
       if (!folderIds.size) { L.info(`No real-time folders for ${row.email}`); continue; }
 

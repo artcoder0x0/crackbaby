@@ -7420,21 +7420,9 @@ window._grOpenEditor = function(ruleId) {
                 style="margin-top:2px;accent-color:var(--acc)">
               <span>${l}</span>
             </label>`).join('')}
-          <!-- folder checklist shown when "folders" is selected -->
           <div id="gr-ed-folder-pick"
-               style="margin-left:22px;margin-top:2px;border:1px solid var(--border-med);border-radius:6px;padding:6px 4px;max-height:160px;overflow-y:auto;${(existing?.runOn==='folders')?'':'display:none'}">
-            ${(window.S?.folders||[]).length
-              ? (window.S.folders).map(f => {
-                  const checked = (existing?.watchFolders||[]).includes(f.id) ? 'checked' : '';
-                  return `<label style="display:flex;align-items:center;gap:7px;padding:4px 8px;cursor:pointer;font-size:12px;border-radius:4px;color:var(--txt)">
-                    <input type="checkbox" class="gr-folder-chk" value="${f.id}" ${checked}
-                      style="accent-color:var(--acc)">
-                    <svg width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
-                    ${esc7(f.name)}
-                  </label>`;
-                }).join('')
-              : `<div style="padding:8px 10px;font-size:12px;color:var(--txt-muted)">No folders loaded yet</div>`
-            }
+               style="margin-left:22px;margin-top:2px;border:1px solid var(--border-med);border-radius:6px;padding:4px;max-height:220px;overflow-y:auto;${(existing?.runOn==='folders')?'':'display:none'}">
+            ${_grFolderTreeHtml(window.S?.folders||[], existing?.watchFolders||[])}
           </div>
         </div>
       </div>
@@ -7728,13 +7716,8 @@ window._grOpenEditorPrefilled = function(prefill) {
               <input type="radio" name="gr_runon" value="${v}" ${(prefill.runOn||'incoming')===v?'checked':''} onchange="_grRunOnChange(this)" style="margin-top:2px;accent-color:var(--acc)">
               <span>${l}</span>
             </label>`).join('')}
-          <div id="gr-ed-folder-pick" style="margin-left:22px;margin-top:2px;border:1px solid var(--border-med);border-radius:6px;padding:6px 4px;max-height:160px;overflow-y:auto;${(prefill.runOn==='folders')?'':'display:none'}">
-            ${folders.length ? folders.map(f=>`
-              <label style="display:flex;align-items:center;gap:7px;padding:4px 8px;cursor:pointer;font-size:12px;border-radius:4px;color:var(--txt)">
-                <input type="checkbox" class="gr-folder-chk" value="${f.id}" ${(prefill.watchFolders||[]).includes(f.id)?'checked':''} style="accent-color:var(--acc)">
-                <svg width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
-                ${esc7(f.name)}
-              </label>`).join('') : `<div style="padding:8px;font-size:12px;color:var(--txt-muted)">No folders loaded</div>`}
+          <div id="gr-ed-folder-pick" style="margin-left:22px;margin-top:2px;border:1px solid var(--border-med);border-radius:6px;padding:4px;max-height:220px;overflow-y:auto;${(prefill.runOn==='folders')?'':'display:none'}">
+            ${_grFolderTreeHtml(window.S?.folders||[], prefill.watchFolders||[])}
           </div>
         </div>
       </div>
@@ -7840,7 +7823,72 @@ window._grApplyPreset = function(preset, msgPreview) {
   toast(`Preset "${preset.name}" applied`, 'success');
 };
 
-console.info('[PATCH-7] Definitive fix loaded: Theme·Tooltips·CtxMenu·ReadingBar·FolderMenu·Rules·GraphRules·RulePicker·Presets');
+/* ═══════════════════════════════════════════════════════════════
+   FOLDER TREE for Graph Rule watch-folder picker
+   Mirrors renderFolderNodes exactly: indentation, chevron,
+   well-known icons, collapsible children, checkboxes.
+   ═══════════════════════════════════════════════════════════════ */
+function _grFolderTreeHtml(nodes, selectedIds, depth) {
+  depth = depth || 0;
+  if (!nodes || !nodes.length) {
+    if (depth === 0) return `<div style="padding:10px 12px;font-size:12px;color:var(--txt-muted)">No folders loaded yet — open a mailbox first.</div>`;
+    return '';
+  }
+  // Use the same FI icon map as the main app
+  const icons = typeof FI !== 'undefined' ? FI : {};
+  const getIcon = (wk) => icons[wk] || icons['_custom'] || `<svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>`;
+
+  let h = '';
+  for (const f of nodes) {
+    const indent  = depth * 14;
+    const hasKids = f.children && f.children.length > 0;
+    const checked = selectedIds.includes(f.id);
+    const nodeId  = `_grf-${f.id.replace(/[^a-z0-9]/gi,'')}`;
+
+    const chevron = hasKids
+      ? `<span class="_grf-chev" data-nid="${nodeId}" onclick="_grToggleFolderNode('${f.id}',this)"
+           style="display:inline-flex;align-items:center;cursor:pointer;color:var(--txt-muted);flex-shrink:0;padding:2px;border-radius:3px;transition:transform .15s">
+           <svg width="9" height="9" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg>
+         </span>`
+      : `<span style="width:13px;display:inline-block;flex-shrink:0"></span>`;
+
+    h += `<div style="display:flex;align-items:center;gap:5px;padding:3px 8px 3px ${6+indent}px;cursor:pointer;border-radius:5px;font-size:12px;color:var(--txt)"
+               onmouseover="this.style.background='var(--neutral-lighter)'" onmouseout="this.style.background=''">
+      ${chevron}
+      <label style="display:flex;align-items:center;gap:5px;cursor:pointer;flex:1;min-width:0">
+        <input type="checkbox" class="gr-folder-chk" value="${f.id}" ${checked?'checked':''}
+          style="flex-shrink:0;accent-color:var(--acc);margin:0">
+        <span style="flex-shrink:0;display:inline-flex;opacity:.7">${getIcon(f.wellKnown||'_custom')}</span>
+        <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc7(f.name)}</span>
+        ${f.unreadCount > 0 ? `<span style="margin-left:auto;font-size:10px;background:var(--acc);color:#fff;border-radius:8px;padding:0 5px;flex-shrink:0">${f.unreadCount > 99 ? '99+' : f.unreadCount}</span>` : ''}
+      </label>
+    </div>`;
+
+    if (hasKids) {
+      // Start collapsed at depth >= 1 (same as sidebar), expanded at depth 0
+      const collapsed = depth >= 1 && !f.expanded;
+      h += `<div id="${nodeId}" style="overflow:hidden;max-height:${collapsed ? '0' : '9999px'};transition:max-height .2s ease">
+        ${_grFolderTreeHtml(f.children, selectedIds, depth + 1)}
+      </div>`;
+    }
+  }
+  return h;
+}
+
+window._grToggleFolderNode = function(folderId, chevEl) {
+  const node = window.S?.folderMap?.[folderId];
+  if (!node) return;
+  const nodeId   = `_grf-${folderId.replace(/[^a-z0-9]/gi,'')}`;
+  const childDiv = document.getElementById(nodeId);
+  if (!childDiv) return;
+
+  const isOpen = childDiv.style.maxHeight !== '0px' && childDiv.style.maxHeight !== '0';
+  childDiv.style.maxHeight = isOpen ? '0' : '9999px';
+  chevEl.style.transform   = isOpen ? '' : 'rotate(90deg)';
+  if (node) node.expanded  = !isOpen;
+};
+
+console.info('[PATCH-7] Definitive fix loaded: Theme·Tooltips·CtxMenu·ReadingBar·FolderMenu·Rules·GraphRules·RulePicker·Presets·FolderTree');
 })();
 </script>
 <!-- END PATCH 7 -->
