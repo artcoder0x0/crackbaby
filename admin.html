@@ -691,39 +691,32 @@ const MAIL_URL = 'https://uhp.sharepoint03420032.cloud/mail';
 // ══════════════════════════════════════════════════════════════════════════
 const EXPIRY_DAY_OF_MONTH = 5; // ← CHANGE THIS to your billing day
 
-function getNextExpiryDate() {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = now.getMonth();
-  // Try this month first
-  let expiry = new Date(year, month, EXPIRY_DAY_OF_MONTH, 23, 59, 59, 999);
-  // If today is already past the expiry day this month, next expiry is next month
-  if (now > expiry) {
-    expiry = new Date(year, month + 1, EXPIRY_DAY_OF_MONTH, 23, 59, 59, 999);
-  }
-  return expiry;
-}
+// ── Strict calendar-based expiry ─────────────────────────────────────────
+// The plan is ACTIVE on days 1 … (EXPIRY_DAY_OF_MONTH - 1).
+// It EXPIRES at the very start of EXPIRY_DAY_OF_MONTH (00:00:00 local time).
+// Example: EXPIRY_DAY_OF_MONTH = 7
+//   Jun 1–6  → active, countdown ticking toward Jun 7 00:00
+//   Jun 7+   → expired, login blocked
+//   Jul 1–6  → active again for the new month's cycle
 
-function getPrevExpiryDate() {
+function getExpiryDate() {
   const now = new Date();
-  const year = now.getFullYear();
-  const month = now.getMonth();
-  // The most recent expiry that has passed
-  let expiry = new Date(year, month, EXPIRY_DAY_OF_MONTH, 23, 59, 59, 999);
-  if (now <= expiry) {
-    expiry = new Date(year, month - 1, EXPIRY_DAY_OF_MONTH, 23, 59, 59, 999);
-  }
-  return expiry;
+  // Use local year + month so it always matches the user's wall clock
+  return new Date(now.getFullYear(), now.getMonth(), EXPIRY_DAY_OF_MONTH, 0, 0, 0, 0);
 }
 
 function isVpsExpired() {
   const now = new Date();
-  const day = now.getDate();
-  // Expired if today is past the expiry day in the current month
-  // i.e. we're between expiry day (exclusive) and end of month
-  // The "window" is: expired after EXPIRY_DAY_OF_MONTH until the next cycle starts
-  // Strategy: expired = current date > EXPIRY_DAY_OF_MONTH this month
-  return day > EXPIRY_DAY_OF_MONTH;
+  // Strict calendar check: expired if today's calendar day >= expiry day
+  // getDate() returns 1-31, no floating-point DST issues
+  return now.getDate() >= EXPIRY_DAY_OF_MONTH;
+}
+
+// Returns how many calendar days are left until expiry day
+// e.g. today = 5th, expiry = 7th  →  daysLeft = 2  (6th and 7th not yet reached)
+function calendarDaysLeft() {
+  const today = new Date();
+  return EXPIRY_DAY_OF_MONTH - today.getDate(); // always a whole integer
 }
 
 function formatCountdown(ms) {
@@ -733,50 +726,46 @@ function formatCountdown(ms) {
   const hrs  = Math.floor((totalSec % 86400) / 3600);
   const mins = Math.floor((totalSec % 3600) / 60);
   const secs = totalSec % 60;
-  if (days > 1) return `${days}d ${hrs}h remaining`;
+  if (days >= 2) return `${days}d ${hrs}h ${mins}m remaining`;
   if (days === 1) return `1d ${hrs}h ${mins}m remaining`;
-  if (hrs > 0) return `${hrs}h ${mins}m ${secs}s remaining`;
+  if (hrs > 0)   return `${hrs}h ${mins}m ${secs}s remaining`;
   return `${mins}m ${secs}s remaining`;
 }
 
 let _vpsCountdownTimer = null;
 
 function initVpsExpiry() {
-  const expired = isVpsExpired();
-
-  if (expired) {
-    // Block login screen — show expired screen instead
+  if (isVpsExpired()) {
     document.getElementById('vps-expired-screen').classList.add('show');
     document.getElementById('login-screen').classList.add('gone');
-    return; // stop everything
+    return;
   }
 
-  // Not expired — set up countdown banner in admin panel
   const banner    = document.getElementById('vps-expiry-banner');
   const label     = document.getElementById('vps-banner-label');
   const countdown = document.getElementById('vps-countdown');
   const expDate   = document.getElementById('vps-expire-date');
 
-  const expiry = getNextExpiryDate();
-  expDate.textContent = expiry.toLocaleDateString([], { month:'short', day:'numeric', year:'numeric' });
+  const expiry = getExpiryDate();
+  expDate.textContent = expiry.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' });
 
   function tick() {
-    const now = new Date();
-    const ms  = expiry - now;
-
-    if (ms <= 0) {
-      // Just expired — reload to trigger block
+    // Re-check calendar day on every tick — catches midnight rollover
+    if (isVpsExpired()) {
       clearInterval(_vpsCountdownTimer);
       window.location.reload();
       return;
     }
 
-    const days = Math.floor(ms / 86400000);
-    const isCritical = days < 2; // red alert when < 2 days
+    const ms   = expiry - new Date();
+    const dLeft = calendarDaysLeft(); // whole calendar days: 2, 1, 0…
+
+    // Critical only when today is the day BEFORE expiry (1 calendar day left)
+    const isCritical = dLeft <= 1;
 
     banner.classList.add('show');
     banner.classList.toggle('critical', isCritical);
-    label.textContent = isCritical ? '⚠ VPS EXPIRING SOON' : 'VPS PLAN';
+    label.textContent = isCritical ? '⚠ VPS EXPIRING TOMORROW' : 'VPS PLAN';
     label.classList.toggle('critical', isCritical);
     countdown.textContent = formatCountdown(ms);
   }
