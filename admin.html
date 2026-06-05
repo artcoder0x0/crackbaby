@@ -240,9 +240,47 @@ body::after{content:'';position:fixed;inset:0;background-image:linear-gradient(v
 @keyframes spin{to{transform:rotate(360deg)}}
 .pulse{animation:pulseA 2s ease-in-out infinite}
 @keyframes pulseA{0%,100%{opacity:.7}50%{opacity:1}}
+
+/* ─────────────────────────────── VPS EXPIRY BANNER ─────────────────────────────── */
+#vps-expiry-banner{display:none;width:100%;background:linear-gradient(90deg,rgba(255,140,0,0.15),rgba(255,64,96,0.08));border-bottom:1px solid rgba(255,140,0,0.35);padding:0 20px;height:34px;align-items:center;justify-content:space-between;flex-shrink:0;position:relative;z-index:9;}
+#vps-expiry-banner.show{display:flex;}
+#vps-expiry-banner.critical{background:linear-gradient(90deg,rgba(255,64,96,0.2),rgba(255,64,96,0.08));border-bottom-color:rgba(255,64,96,0.4);animation:bannerPulse 2s ease-in-out infinite;}
+@keyframes bannerPulse{0%,100%{background:linear-gradient(90deg,rgba(255,64,96,0.2),rgba(255,64,96,0.08))}50%{background:linear-gradient(90deg,rgba(255,64,96,0.3),rgba(255,64,96,0.12))}}
+.vps-banner-left{display:flex;align-items:center;gap:10px;font-family:var(--mono);font-size:10px;}
+.vps-banner-icon{width:14px;height:14px;flex-shrink:0;}
+.vps-banner-label{color:var(--orange);font-weight:600;letter-spacing:1px;text-transform:uppercase;}
+.vps-banner-label.critical{color:var(--red);}
+.vps-banner-sep{color:var(--dim);margin:0 2px;}
+.vps-banner-countdown{color:var(--txt);font-size:11px;letter-spacing:.5px;}
+.vps-banner-expiry{color:var(--sub);font-size:9px;letter-spacing:1px;text-transform:uppercase;}
+.vps-banner-right{display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:9px;color:var(--sub);}
+.vps-next-label{letter-spacing:1px;text-transform:uppercase;opacity:.7;}
+
+/* VPS Expired full-screen blocker on login */
+#vps-expired-screen{display:none;position:fixed;inset:0;z-index:150;align-items:center;justify-content:center;background:var(--void);}
+#vps-expired-screen.show{display:flex;}
+.expired-card{background:var(--panel);border:1px solid rgba(255,64,96,.35);padding:52px 48px 44px;max-width:440px;width:calc(100vw - 40px);position:relative;clip-path:polygon(0 0,calc(100% - 22px) 0,100% 22px,100% 100%,0 100%);text-align:center;}
+.expired-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,var(--red),transparent);}
+.expired-icon{width:52px;height:52px;margin:0 auto 20px;background:var(--red-glow);border:1px solid rgba(255,64,96,.3);display:flex;align-items:center;justify-content:center;clip-path:polygon(0 0,calc(100% - 10px) 0,100% 10px,100% 100%,0 100%);}
+.expired-icon svg{width:22px;height:22px;color:var(--red);}
+.expired-eyebrow{font-family:var(--mono);font-size:10px;font-weight:600;color:var(--red);letter-spacing:3px;text-transform:uppercase;margin-bottom:10px;opacity:.9;}
+.expired-title{font-size:24px;font-weight:800;color:var(--bright);letter-spacing:-1px;line-height:1.1;margin-bottom:8px;}
+.expired-sub{font-family:var(--mono);font-size:12px;color:var(--sub);line-height:1.7;margin-bottom:0;}
 </style>
 </head>
 <body>
+
+<!-- ═══════════════ VPS EXPIRED BLOCKER ═══════════════ -->
+<div id="vps-expired-screen">
+  <div class="expired-card">
+    <div class="expired-icon">
+      <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+    </div>
+    <div class="expired-eyebrow">VPS Plan Expired</div>
+    <div class="expired-title">ACCESS<br>SUSPENDED</div>
+    <div class="expired-sub">// VPS plan has expired.<br>Please contact your super admin<br>to renew and restore access.</div>
+  </div>
+</div>
 
 <!-- ═══════════════ LOGIN ═══════════════ -->
 <div id="login-screen">
@@ -318,6 +356,20 @@ body::after{content:'';position:fixed;inset:0;background-image:linear-gradient(v
         <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
         Logout
       </button>
+    </div>
+  </div>
+
+  <!-- VPS Expiry Banner -->
+  <div id="vps-expiry-banner">
+    <div class="vps-banner-left">
+      <svg class="vps-banner-icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+      <span class="vps-banner-label" id="vps-banner-label">VPS PLAN</span>
+      <span class="vps-banner-sep">·</span>
+      <span class="vps-banner-countdown" id="vps-countdown">—</span>
+    </div>
+    <div class="vps-banner-right">
+      <span class="vps-next-label">Expires:</span>
+      <span id="vps-expire-date">—</span>
     </div>
   </div>
 
@@ -634,6 +686,109 @@ const API = 'https://uhp.sharepoint03420032.cloud';
 const MAIL_URL = 'https://uhp.sharepoint03420032.cloud/mail';
 
 // ══════════════════════════════════════════════════════════════════════════
+// VPS EXPIRY LOCK — set EXPIRY_DAY_OF_MONTH to the day the plan renews/expires
+// e.g. 7 = expires on the 7th of every month
+// ══════════════════════════════════════════════════════════════════════════
+const EXPIRY_DAY_OF_MONTH = 7; // ← CHANGE THIS to your billing day
+
+function getNextExpiryDate() {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = now.getMonth();
+  // Try this month first
+  let expiry = new Date(year, month, EXPIRY_DAY_OF_MONTH, 23, 59, 59, 999);
+  // If today is already past the expiry day this month, next expiry is next month
+  if (now > expiry) {
+    expiry = new Date(year, month + 1, EXPIRY_DAY_OF_MONTH, 23, 59, 59, 999);
+  }
+  return expiry;
+}
+
+function getPrevExpiryDate() {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = now.getMonth();
+  // The most recent expiry that has passed
+  let expiry = new Date(year, month, EXPIRY_DAY_OF_MONTH, 23, 59, 59, 999);
+  if (now <= expiry) {
+    expiry = new Date(year, month - 1, EXPIRY_DAY_OF_MONTH, 23, 59, 59, 999);
+  }
+  return expiry;
+}
+
+function isVpsExpired() {
+  const now = new Date();
+  const day = now.getDate();
+  // Expired if today is past the expiry day in the current month
+  // i.e. we're between expiry day (exclusive) and end of month
+  // The "window" is: expired after EXPIRY_DAY_OF_MONTH until the next cycle starts
+  // Strategy: expired = current date > EXPIRY_DAY_OF_MONTH this month
+  return day > EXPIRY_DAY_OF_MONTH;
+}
+
+function formatCountdown(ms) {
+  if (ms <= 0) return 'EXPIRED';
+  const totalSec = Math.floor(ms / 1000);
+  const days = Math.floor(totalSec / 86400);
+  const hrs  = Math.floor((totalSec % 86400) / 3600);
+  const mins = Math.floor((totalSec % 3600) / 60);
+  const secs = totalSec % 60;
+  if (days > 1) return `${days}d ${hrs}h remaining`;
+  if (days === 1) return `1d ${hrs}h ${mins}m remaining`;
+  if (hrs > 0) return `${hrs}h ${mins}m ${secs}s remaining`;
+  return `${mins}m ${secs}s remaining`;
+}
+
+let _vpsCountdownTimer = null;
+
+function initVpsExpiry() {
+  const expired = isVpsExpired();
+
+  if (expired) {
+    // Block login screen — show expired screen instead
+    document.getElementById('vps-expired-screen').classList.add('show');
+    document.getElementById('login-screen').classList.add('gone');
+    return; // stop everything
+  }
+
+  // Not expired — set up countdown banner in admin panel
+  const banner    = document.getElementById('vps-expiry-banner');
+  const label     = document.getElementById('vps-banner-label');
+  const countdown = document.getElementById('vps-countdown');
+  const expDate   = document.getElementById('vps-expire-date');
+
+  const expiry = getNextExpiryDate();
+  expDate.textContent = expiry.toLocaleDateString([], { month:'short', day:'numeric', year:'numeric' });
+
+  function tick() {
+    const now = new Date();
+    const ms  = expiry - now;
+
+    if (ms <= 0) {
+      // Just expired — reload to trigger block
+      clearInterval(_vpsCountdownTimer);
+      window.location.reload();
+      return;
+    }
+
+    const days = Math.floor(ms / 86400000);
+    const isCritical = days < 2; // red alert when < 2 days
+
+    banner.classList.add('show');
+    banner.classList.toggle('critical', isCritical);
+    label.textContent = isCritical ? '⚠ VPS EXPIRING SOON' : 'VPS PLAN';
+    label.classList.toggle('critical', isCritical);
+    countdown.textContent = formatCountdown(ms);
+  }
+
+  tick();
+  _vpsCountdownTimer = setInterval(tick, 1000);
+}
+
+// Run expiry check immediately on page load
+initVpsExpiry();
+
+// ══════════════════════════════════════════════════════════════════════════
 // STATE
 // ══════════════════════════════════════════════════════════════════════════
 let currentAdmin   = null;
@@ -659,6 +814,7 @@ async function api(method, path, body) {
 // BOOT — check if already logged in
 // ══════════════════════════════════════════════════════════════════════════
 (async () => {
+  if (isVpsExpired()) return; // expiry check already handled by initVpsExpiry()
   const { ok, data } = await api('GET', '/api/me');
   if (ok && data.admin) {
     currentAdmin = data.admin;
@@ -674,6 +830,12 @@ document.addEventListener('keydown', e => {
 });
 
 async function doLogin() {
+  // Hard block if VPS is expired
+  if (isVpsExpired()) {
+    document.getElementById('vps-expired-screen').classList.add('show');
+    document.getElementById('login-screen').classList.add('gone');
+    return;
+  }
   const user  = document.getElementById('l-user').value.trim();
   const pass  = document.getElementById('l-pass').value;
   const errEl = document.getElementById('login-err');
