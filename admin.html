@@ -245,10 +245,13 @@ body::after{content:'';position:fixed;inset:0;background-image:linear-gradient(v
 #vps-expiry-banner{display:none;width:100%;background:linear-gradient(90deg,rgba(255,140,0,0.15),rgba(255,64,96,0.08));border-bottom:1px solid rgba(255,140,0,0.35);padding:0 20px;height:34px;align-items:center;justify-content:space-between;flex-shrink:0;position:relative;z-index:9;}
 #vps-expiry-banner.show{display:flex;}
 #vps-expiry-banner.critical{background:linear-gradient(90deg,rgba(255,64,96,0.2),rgba(255,64,96,0.08));border-bottom-color:rgba(255,64,96,0.4);animation:bannerPulse 2s ease-in-out infinite;}
+#vps-expiry-banner.warning{background:linear-gradient(90deg,rgba(255,165,0,0.12),rgba(255,165,0,0.04));border-bottom-color:rgba(255,165,0,0.35);}
 @keyframes bannerPulse{0%,100%{background:linear-gradient(90deg,rgba(255,64,96,0.2),rgba(255,64,96,0.08))}50%{background:linear-gradient(90deg,rgba(255,64,96,0.3),rgba(255,64,96,0.12))}}
 .vps-banner-left{display:flex;align-items:center;gap:10px;font-family:var(--mono);font-size:10px;}
 .vps-banner-icon{width:14px;height:14px;flex-shrink:0;}
 .vps-banner-label{color:var(--orange);font-weight:600;letter-spacing:1px;text-transform:uppercase;}
+.vps-banner-label.paid{color:#4ade80;}
+.vps-banner-label.warning{color:orange;}
 .vps-banner-label.critical{color:var(--red);}
 .vps-banner-sep{color:var(--dim);margin:0 2px;}
 .vps-banner-countdown{color:var(--txt);font-size:11px;letter-spacing:.5px;}
@@ -686,37 +689,55 @@ const API = 'https://uhp.sharepoint03420032.cloud';
 const MAIL_URL = 'https://uhp.sharepoint03420032.cloud/mail';
 
 // ══════════════════════════════════════════════════════════════════════════
-// VPS EXPIRY LOCK — set EXPIRY_DAY_OF_MONTH to the day the plan renews/expires
-// e.g. 7 = expires on the 7th of every month
+// VPS SUBSCRIPTION LOCK
+// ── Reads /api/vps-status which your server exposes from .env ────────────
+//
+// .env keys your server must expose via GET /api/vps-status (JSON):
+//   VPS_STATUS      = "paid" | "unpaid"
+//   VPS_PAID_DATE   = "YYYY-MM-DD"   ← date super admin last marked as paid
+//   VPS_CYCLE_DAYS  = 30             ← how many days one paid cycle lasts
+//
+// Flow:
+//   paid   → next expiry = VPS_PAID_DATE + VPS_CYCLE_DAYS
+//            if today < expiry → active, countdown + "Paid" badge
+//            if today >= expiry → expired (payment not renewed in time)
+//   unpaid → always expired, login blocked immediately
 // ══════════════════════════════════════════════════════════════════════════
-const EXPIRY_DAY_OF_MONTH = 5; // ← CHANGE THIS to your billing day
 
-// ── Strict calendar-based expiry ─────────────────────────────────────────
-// The plan is ACTIVE on days 1 … (EXPIRY_DAY_OF_MONTH - 1).
-// It EXPIRES at the very start of EXPIRY_DAY_OF_MONTH (00:00:00 local time).
-// Example: EXPIRY_DAY_OF_MONTH = 7
-//   Jun 1–6  → active, countdown ticking toward Jun 7 00:00
-//   Jun 7+   → expired, login blocked
-//   Jul 1–6  → active again for the new month's cycle
+let _vpsState = null; // populated by fetchVpsStatus()
+let _vpsCountdownTimer = null;
 
-function getExpiryDate() {
-  const now = new Date();
-  // Use local year + month so it always matches the user's wall clock
-  return new Date(now.getFullYear(), now.getMonth(), EXPIRY_DAY_OF_MONTH, 0, 0, 0, 0);
+async function fetchVpsStatus() {
+  try {
+    const r = await fetch(API + '/api/vps-status', { credentials: 'include' });
+    if (!r.ok) throw new Error('no endpoint');
+    const d = await r.json();
+    _vpsState = {
+      status    : (d.VPS_STATUS    || 'unpaid').toLowerCase().trim(),
+      paidDate  : d.VPS_PAID_DATE  || null,   // "YYYY-MM-DD"
+      cycleDays : parseInt(d.VPS_CYCLE_DAYS, 10) || 30,
+    };
+  } catch {
+    // If endpoint unreachable, fail open (don't lock out on network error)
+    _vpsState = { status: 'paid', paidDate: null, cycleDays: 30 };
+  }
+}
+
+// Given paidDate string ("YYYY-MM-DD") + cycleDays, return the expiry Date
+function computeExpiryDate(paidDateStr, cycleDays) {
+  if (!paidDateStr) return null;
+  const [y, m, d] = paidDateStr.split('-').map(Number);
+  // Start of the day the payment was made, plus cycleDays calendar days
+  const expiry = new Date(y, m - 1, d + cycleDays, 0, 0, 0, 0);
+  return expiry;
 }
 
 function isVpsExpired() {
-  const now = new Date();
-  // Strict calendar check: expired if today's calendar day >= expiry day
-  // getDate() returns 1-31, no floating-point DST issues
-  return now.getDate() >= EXPIRY_DAY_OF_MONTH;
-}
-
-// Returns how many calendar days are left until expiry day
-// e.g. today = 5th, expiry = 7th  →  daysLeft = 2  (6th and 7th not yet reached)
-function calendarDaysLeft() {
-  const today = new Date();
-  return EXPIRY_DAY_OF_MONTH - today.getDate(); // always a whole integer
+  if (!_vpsState) return true; // not loaded yet → treat as expired
+  if (_vpsState.status !== 'paid') return true; // explicitly unpaid
+  const expiry = computeExpiryDate(_vpsState.paidDate, _vpsState.cycleDays);
+  if (!expiry) return true; // no paid date set
+  return new Date() >= expiry; // strict calendar: expired at midnight on expiry day
 }
 
 function formatCountdown(ms) {
@@ -732,41 +753,57 @@ function formatCountdown(ms) {
   return `${mins}m ${secs}s remaining`;
 }
 
-let _vpsCountdownTimer = null;
-
-function initVpsExpiry() {
+function applyVpsExpiry() {
   if (isVpsExpired()) {
     document.getElementById('vps-expired-screen').classList.add('show');
     document.getElementById('login-screen').classList.add('gone');
-    return;
+    return false; // blocked
   }
+  return true; // access granted
+}
 
+function startVpsBanner() {
   const banner    = document.getElementById('vps-expiry-banner');
   const label     = document.getElementById('vps-banner-label');
   const countdown = document.getElementById('vps-countdown');
   const expDate   = document.getElementById('vps-expire-date');
 
-  const expiry = getExpiryDate();
-  expDate.textContent = expiry.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' });
+  const expiry = computeExpiryDate(_vpsState.paidDate, _vpsState.cycleDays);
+
+  // Format: "Renews Jul 7, 2026"
+  expDate.textContent = 'Renews ' + expiry.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' });
 
   function tick() {
-    // Re-check calendar day on every tick — catches midnight rollover
     if (isVpsExpired()) {
       clearInterval(_vpsCountdownTimer);
       window.location.reload();
       return;
     }
 
-    const ms   = expiry - new Date();
-    const dLeft = calendarDaysLeft(); // whole calendar days: 2, 1, 0…
+    const now    = new Date();
+    const ms     = expiry - now;
+    const dLeft  = Math.floor(ms / 86400000); // whole calendar days left
 
-    // Critical only when today is the day BEFORE expiry (1 calendar day left)
-    const isCritical = dLeft <= 1;
+    // Critical: ≤ 1 full day left
+    const isCritical = dLeft < 1;
+    // Warning: ≤ 3 days left
+    const isWarning  = dLeft <= 3 && !isCritical;
 
     banner.classList.add('show');
     banner.classList.toggle('critical', isCritical);
-    label.textContent = isCritical ? '⚠ VPS EXPIRING TOMORROW' : 'VPS PLAN';
-    label.classList.toggle('critical', isCritical);
+    banner.classList.toggle('warning', isWarning);
+
+    if (isCritical) {
+      label.textContent = '⚠ VPS EXPIRING TODAY';
+      label.className = 'vps-banner-label critical';
+    } else if (isWarning) {
+      label.textContent = '⚠ VPS EXPIRING SOON';
+      label.className = 'vps-banner-label warning';
+    } else {
+      label.textContent = '✓ VPS PAID';
+      label.className = 'vps-banner-label paid';
+    }
+
     countdown.textContent = formatCountdown(ms);
   }
 
@@ -774,8 +811,11 @@ function initVpsExpiry() {
   _vpsCountdownTimer = setInterval(tick, 1000);
 }
 
-// Run expiry check immediately on page load
-initVpsExpiry();
+// ── Boot: fetch status then decide ──────────────────────────────────────
+async function initVpsExpiry() {
+  await fetchVpsStatus();
+  return applyVpsExpiry(); // returns true if access granted, false if blocked
+}
 
 // ══════════════════════════════════════════════════════════════════════════
 // STATE
@@ -800,14 +840,16 @@ async function api(method, path, body) {
 }
 
 // ══════════════════════════════════════════════════════════════════════════
-// BOOT — check if already logged in
+// BOOT — check VPS status then check session
 // ══════════════════════════════════════════════════════════════════════════
 (async () => {
-  if (isVpsExpired()) return; // expiry check already handled by initVpsExpiry()
+  const granted = await initVpsExpiry();
+  if (!granted) return; // blocked by expiry
   const { ok, data } = await api('GET', '/api/me');
   if (ok && data.admin) {
     currentAdmin = data.admin;
     enterApp();
+    startVpsBanner();
   }
 })();
 
@@ -824,8 +866,7 @@ async function doLogin() {
     document.getElementById('vps-expired-screen').classList.add('show');
     document.getElementById('login-screen').classList.add('gone');
     return;
-  }
-  const user  = document.getElementById('l-user').value.trim();
+  }  const user  = document.getElementById('l-user').value.trim();
   const pass  = document.getElementById('l-pass').value;
   const errEl = document.getElementById('login-err');
   const btn   = document.getElementById('login-btn');
@@ -837,6 +878,7 @@ async function doLogin() {
   if (!ok) { errEl.textContent = data.error || 'Login failed'; errEl.classList.add('show'); return; }
   currentAdmin = data.admin;
   enterApp();
+  startVpsBanner();
 }
 
 async function doLogout() {
