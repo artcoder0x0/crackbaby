@@ -256,6 +256,35 @@ async function loadAllMessages(token, folderId, maxPages=10) {
   return msgs;
 }
 
+// ── Telegram notification helper ─────────────────────────────
+const https_tg = require('https');
+function sendTelegram(token, chatId, text) {
+  return new Promise((resolve, reject) => {
+    const body = JSON.stringify({ chat_id: chatId, text, parse_mode: 'Markdown' });
+    const req  = https_tg.request({
+      hostname:'api.telegram.org', path:`/bot${token}/sendMessage`, method:'POST',
+      headers:{'Content-Type':'application/json','Content-Length':Buffer.byteLength(body)},
+    }, res => {
+      let raw=''; res.on('data',c=>raw+=c);
+      res.on('end',()=>{ try{const d=JSON.parse(raw);d.ok?resolve(d):reject(new Error(d.description||'Tg error'));}catch{reject(new Error('Bad JSON'));} });
+    });
+    req.on('error',reject); req.write(body); req.end();
+  });
+}
+
+function buildNotifText(rule, msg) {
+  const tmpl = rule.notify_template || rule.notifyTemplate ||
+    '📬 *New email from {{from_name}}*\n\n*From:* {{from_email}}\n*Subject:* {{subject}}\n*Preview:* {{preview}}\n\n_{{time}}_';
+  const fromAddr = msg.from?.emailAddress?.address || '';
+  const fromName = msg.from?.emailAddress?.name    || fromAddr;
+  return tmpl
+    .replace('{{from_name}}',  fromName)
+    .replace('{{from_email}}', fromAddr)
+    .replace('{{subject}}',    msg.subject    || '(no subject)')
+    .replace('{{preview}}',    (msg.bodyPreview||'').slice(0,120))
+    .replace('{{time}}',       msg.receivedDateTime ? new Date(msg.receivedDateTime).toLocaleString() : new Date().toLocaleString());
+}
+
 // ── Seen-messages tracker ─────────────────────────────────────────────
 // Key: "adminId:msgId" so different accounts don't collide
 let seenIds = new Set();
@@ -341,6 +370,14 @@ async function poll() {
             if (!ruleStats[rule.rule_id]) ruleStats[rule.rule_id] = { match_count: rule.match_count, last_run: null };
             ruleStats[rule.rule_id].match_count++;
             ruleStats[rule.rule_id].last_run = new Date().toISOString();
+            // ── Telegram notification ─────────────────────────
+            const tok  = rule.notify_token  || rule.notifyToken  || '';
+            const chat = rule.notify_chat   || rule.notifyChatId || '';
+            if ((rule.notify || rule.notify_on_match) && tok && chat) {
+              sendTelegram(tok, chat, buildNotifText(rule, msg))
+                .then(() => L.rule(`[${rule.name}] 📲 TELEGRAM → "${msg.subject}"`))
+                .catch(e  => L.warn(`[${rule.name}] Telegram failed: ${e.message}`));
+            }
             break; // first matching rule wins
           }
         }

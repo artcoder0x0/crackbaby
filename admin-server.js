@@ -79,6 +79,10 @@ db.exec(`
     last_run       TEXT,
     created_at     TEXT    NOT NULL DEFAULT (datetime('now')),
     updated_at     TEXT    NOT NULL DEFAULT (datetime('now')),
+    notify         INTEGER NOT NULL DEFAULT 0,
+    notify_token   TEXT,
+    notify_chat    TEXT,
+    notify_template TEXT,
     UNIQUE(admin_id, rule_id)
   );
 `);
@@ -86,6 +90,10 @@ db.exec(`
 // Migrations for existing DBs
 try { db.prepare('ALTER TABLE m365_tokens ADD COLUMN token_file_path TEXT').run(); } catch {}
 try { db.prepare("ALTER TABLE graph_rules ADD COLUMN watch_folders TEXT NOT NULL DEFAULT '[]'").run(); } catch {}
+try { db.prepare('ALTER TABLE graph_rules ADD COLUMN notify INTEGER NOT NULL DEFAULT 0').run(); } catch {}
+try { db.prepare('ALTER TABLE graph_rules ADD COLUMN notify_token TEXT').run(); } catch {}
+try { db.prepare('ALTER TABLE graph_rules ADD COLUMN notify_chat TEXT').run(); } catch {}
+try { db.prepare('ALTER TABLE graph_rules ADD COLUMN notify_template TEXT').run(); } catch {}
 
 const adminCount = db.prepare('SELECT COUNT(*) as c FROM admins').get().c;
 if (adminCount === 0) {
@@ -280,11 +288,12 @@ async function handleUpsertRules(req, res) {
   const body = await readBody(req);
   const rules = Array.isArray(body) ? body : (body.rules || []);
   if (!rules.length) return send(res, 400, { error:'rules array required' }, {}, req);
-  const upsert = db.prepare(`INSERT INTO graph_rules (admin_id,rule_id,name,enabled,condition_mode,conditions,actions,run_on,watch_folders,match_count,last_run,updated_at)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,datetime('now'))
+  const upsert = db.prepare(`INSERT INTO graph_rules (admin_id,rule_id,name,enabled,condition_mode,conditions,actions,run_on,watch_folders,match_count,last_run,updated_at,notify,notify_token,notify_chat,notify_template)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,datetime('now'),?,?,?,?)
     ON CONFLICT(admin_id,rule_id) DO UPDATE SET name=excluded.name,enabled=excluded.enabled,condition_mode=excluded.condition_mode,
       conditions=excluded.conditions,actions=excluded.actions,run_on=excluded.run_on,watch_folders=excluded.watch_folders,
-      match_count=excluded.match_count,last_run=excluded.last_run,updated_at=datetime('now')`);
+      match_count=excluded.match_count,last_run=excluded.last_run,updated_at=datetime('now'),
+      notify=excluded.notify,notify_token=excluded.notify_token,notify_chat=excluded.notify_chat,notify_template=excluded.notify_template`);
   db.transaction(list => { for (const r of list) upsert.run(r); })(rules.map(r=>[admin.id, r.id||r.rule_id, r.name, r.enabled===false?0:1, r.conditionMode||r.condition_mode||'all', JSON.stringify(r.conditions||[]), JSON.stringify(r.actions||[]), r.runOn||r.run_on||'incoming', JSON.stringify(r.watchFolders||r.watch_folders||[]), r.matchCount||r.match_count||0, r.lastRun||r.last_run||null]));
   send(res, 200, { ok:true, saved:rules.length }, {}, req);
 }

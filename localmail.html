@@ -1737,6 +1737,17 @@
             <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>
           </svg>
         </button>
+        <div style="width:1px;height:18px;background:var(--border-light);margin:0 2px;flex-shrink:0"></div>
+        <button class="icon-btn" id="rt-pin-btn" title="Pin message" onclick="_rtTogglePin()">
+          <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <line x1="12" y1="17" x2="12" y2="22"/><path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V17z"/>
+          </svg>
+        </button>
+        <button class="icon-btn" id="rt-notif-btn" title="Set up Telegram notification for messages like this" onclick="_rtOpenNotifModal()">
+          <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+          </svg>
+        </button>
       </div>
    
       <!-- Scrollable message body -->
@@ -4554,23 +4565,20 @@ window.notifyPermissionMissing = notifyPermissionMissing;
   }
 
   // mouseover bubbles: fires when entering el OR any child of el.
-  // We treat it as "enter" only when coming from OUTSIDE el.
+  // Simple rule: if the closest [title]/[data-_tip] ancestor changed → switch.
+  // No relatedTarget guard here — that guard was blocking child tooltips.
   document.addEventListener('mouseover', e => {
     const el = e.target.closest('[title],[data-_tip]');
 
-    // Mouse moved to an element with no tooltip — clear current if leaving it
     if (!el) {
       if (tipEl) { clearTimeout(tipTimer); hideTip(); restoreTitle(tipEl); tipEl = null; }
       return;
     }
 
-    // Still hovering the same tooltip target — do nothing
+    // Still on the same tooltip owner — no-op
     if (el === tipEl) return;
 
-    // Coming from inside el (child→el) — not a real entry, skip
-    if (tipEl && tipEl.contains(e.relatedTarget)) return;
-
-    // Entering a NEW tooltip target — cancel previous, start fresh
+    // New owner (parent, child, sibling) — always switch cleanly
     clearTimeout(tipTimer);
     hideTip();
     restoreTitle(tipEl);
@@ -4579,9 +4587,9 @@ window.notifyPermissionMissing = notifyPermissionMissing;
     const text = getTipText(el);
     if (!text) return;
 
-    stashTitle(el);   // suppress native tooltip bubble
+    stashTitle(el);
     tipEl = el;
-    tipTimer = setTimeout(() => showTip(el, text), 420);
+    tipTimer = setTimeout(() => showTip(el, text), 380);
   });
 
   // mouseout bubbles: fires when leaving el OR any child.
@@ -7888,7 +7896,599 @@ window._grToggleFolderNode = function(folderId, chevEl) {
   if (node) node.expanded  = !isOpen;
 };
 
-console.info('[PATCH-7] Definitive fix loaded: Theme·Tooltips·CtxMenu·ReadingBar·FolderMenu·Rules·GraphRules·RulePicker·Presets·FolderTree');
+/* ═══════════════════════════════════════════════════════════════
+   PIN SYSTEM  (client-side, localStorage, graph-side only)
+   ───────────────────────────────────────────────────────────────
+   Storage: gp7_pins → { [msgId]: { pinnedAt: ISO, folderId } }
+   Pinned messages always appear first, newest pin at top.
+   ═══════════════════════════════════════════════════════════════ */
+const GP_PINS_KEY = 'gp7_pins';
+function _gpLoad() { try { return JSON.parse(localStorage.getItem(GP_PINS_KEY)||'{}'); } catch { return {}; } }
+function _gpSave(p) { localStorage.setItem(GP_PINS_KEY, JSON.stringify(p)); }
+window._gpTogglePin = function(msgId) {
+  const pins = _gpLoad();
+  const folderId = window.S?.currentFolderId || '';
+  if (pins[msgId]) {
+    delete pins[msgId];
+    toast('Unpinned', 'info');
+  } else {
+    pins[msgId] = { pinnedAt: new Date().toISOString(), folderId };
+    toast('📌 Pinned — will always appear first in this folder', 'success');
+  }
+  _gpSave(pins);
+  // Re-render in place without a network fetch
+  const msgs = window.S?.messages || [];
+  renderMessageList(_gpSort(msgs), window.S?.hasMore || false);
+};
+window._gpIsPinned = id => !!_gpLoad()[id];
+
+function _gpSort(msgs) {
+  const pins = _gpLoad();
+  const pinned   = msgs.filter(m => pins[m.id])
+                       .sort((a,b) => new Date(pins[b.id].pinnedAt) - new Date(pins[a.id].pinnedAt));
+  const unpinned = msgs.filter(m => !pins[m.id]);
+  return [...pinned, ...unpinned];
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   CSS — pin button + pinned row style
+   (injected once; works even inside dynamically built rows)
+   ═══════════════════════════════════════════════════════════════ */
+(function injectPinCss() {
+  if (document.getElementById('_gp-css')) return;
+  const s = document.createElement('style');
+  s.id = '_gp-css';
+  s.textContent = `
+    .msg-item .msg-pin-btn {
+      opacity:0; transition:opacity .12s; cursor:pointer;
+      background:none; border:none; padding:2px 4px;
+      font-size:13px; line-height:1; flex-shrink:0;
+      border-radius:4px; margin-left:auto; color:var(--txt-muted);
+    }
+    .msg-item:hover .msg-pin-btn { opacity:.55; }
+    .msg-item:hover .msg-pin-btn:hover { opacity:1; color:var(--acc); }
+    .msg-item.is-pinned .msg-pin-btn { opacity:1; color:#f5a623; }
+    .msg-item.is-pinned {
+      border-left:3px solid #f5a623;
+      background:linear-gradient(90deg, rgba(245,166,35,.06) 0%, transparent 80%);
+    }
+    .msg-item.is-pinned .msg-pin-btn { color:#f5a623; }
+    .pin-sep { padding:3px 12px; font-size:10.5px; font-weight:600;
+               letter-spacing:.05em; color:var(--txt-muted);
+               text-transform:uppercase; margin-top:4px; }
+  `;
+  document.head.appendChild(s);
+})();
+
+/* ═══════════════════════════════════════════════════════════════
+   OVERRIDE renderMessageList — adds pin buttons + sorted pins
+   ═══════════════════════════════════════════════════════════════ */
+const _origRML = window.renderMessageList;
+window.renderMessageList = function(msgs, hasMore) {
+  const el = document.getElementById('msg-list');
+  if (!el) return _origRML?.(msgs, hasMore);
+  if (!msgs || !msgs.length) return _origRML?.(msgs, hasMore);
+
+  const pins = _gpLoad();
+  const sorted = _gpSort(msgs);
+  const hasPins = sorted.some(m => pins[m.id]);
+  let pinnedDone = false;
+
+  el.innerHTML = sorted.map((m, i) => {
+    const isPinned = !!pins[m.id];
+    // Separator between pinned and unpinned blocks
+    let sep = '';
+    if (hasPins && !isPinned && !pinnedDone) {
+      pinnedDone = true;
+      sep = `<div class="pin-sep">Other messages</div>`;
+    }
+    if (!hasPins) pinnedDone = true;
+
+    const from  = m.from?.emailAddress;
+    const name  = from?.name || from?.address || 'Unknown';
+    const addr  = from?.address || '';
+    const color = (typeof avatarColor === 'function') ? avatarColor(addr||name) : '#0078d4';
+    const ini   = (typeof initials   === 'function') ? initials(name) : name.slice(0,2).toUpperCase();
+    const esc_  = (typeof esc === 'function') ? esc : (s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'));
+    const rt    = (typeof relativeTime === 'function') ? relativeTime(m.receivedDateTime) : '';
+    const pinTip = isPinned
+      ? `Pinned ${new Date(pins[m.id].pinnedAt).toLocaleDateString()} — click to unpin`
+      : 'Pin this message (stays at top of folder)';
+
+    return `${sep}<div class="msg-item ${!m.isRead?'unread':''} ${isPinned?'is-pinned':''}" id="mi-${m.id}" onclick="openMessage('${m.id}')">
+      <div class="msg-row1">
+        <div class="msg-avatar" style="background:${color}">${ini}</div>
+        <div class="msg-sender">${esc_(name)}</div>
+        <div class="msg-time">${rt}</div>
+        <button class="msg-pin-btn" title="${esc_(pinTip)}"
+          onclick="event.stopPropagation();_gpTogglePin('${m.id}')">📌</button>
+      </div>
+      <div class="msg-subject">${esc_(m.subject||'(no subject)')}</div>
+      <div class="msg-preview">${esc_(m.bodyPreview||'')}</div>
+      ${m.hasAttachments?'<div class="msg-tags"><span class="msg-tag tag-att">📎</span></div>':''}
+    </div>`;
+  }).join('');
+
+  const footer    = document.getElementById('list-footer');
+  const loadAllBtn = document.getElementById('load-all-btn');
+  if ((hasMore !== undefined ? hasMore : window.S?.hasMore)) {
+    if (footer)     footer.style.display    = 'block';
+    if (loadAllBtn) loadAllBtn.style.display = 'flex';
+  } else {
+    if (footer)     footer.style.display    = 'none';
+    if (loadAllBtn) loadAllBtn.style.display = 'none';
+  }
+  if (typeof updateMsgCount === 'function') updateMsgCount();
+};
+
+/* ═══════════════════════════════════════════════════════════════
+   FOLDER TOOLTIP — show pinned count on folder item
+   ═══════════════════════════════════════════════════════════════ */
+(function patchRFN_pins() {
+  const _prev = window.renderFolderNodes;
+  if (!_prev) return;
+  window.renderFolderNodes = function(nodes) {
+    // Let original build the HTML, then patch title attributes
+    let html = _prev(nodes);
+    const pins = _gpLoad();
+    // For each folder node, count pinned messages
+    const countPins = (f) => {
+      return Object.values(pins).filter(p => p.folderId === f.id).length;
+    };
+    const patchNodes = (ns) => {
+      for (const f of ns) {
+        const n = countPins(f);
+        if (n > 0) {
+          // Replace title="${f.name}" with enhanced version
+          const plain = f.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          html = html.replace(
+            new RegExp(`title="${plain}"`, 'g'),
+            `title="${f.name} · 📌 ${n} pinned"`
+          );
+        }
+        if (f.children?.length) patchNodes(f.children);
+      }
+    };
+    patchNodes(nodes);
+    return html;
+  };
+  // Keep the _p7 flag so other patches don't double-wrap
+  window.renderFolderNodes._p7 = true;
+})();
+
+/* ═══════════════════════════════════════════════════════════════
+   FOLDER STATE MEMORY + BACKGROUND LOADING
+   ───────────────────────────────────────────────────────────────
+   folderMem[id] = { messages[], skip, hasMore }
+   loadGen[id]   = monotonic counter — incremented on each load
+   
+   • Switching folders restores memory immediately (no skeleton flash)
+   • fetchPage writes to folderMem regardless of current folder
+   • Only renders to screen when folderId === currentFolderId
+     AND the generation still matches → background loads stay silent
+   ═══════════════════════════════════════════════════════════════ */
+const folderMem = {};   // in-memory state persists for the session
+const loadGen   = {};   // generation per folder
+
+const _origLoadFolder = window.loadFolder;
+window.loadFolder = async function(folderIdOrWk, isRealId = false) {
+  let realId = folderIdOrWk;
+  if (!isRealId) {
+    const f = (window.S?.folders || []).find(x => x.wellKnown === folderIdOrWk || x.id === folderIdOrWk);
+    if (f) realId = f.id;
+  }
+  window.S.currentFolderId = realId;
+  window.S.currentFolder   = folderIdOrWk;
+
+  // ── Restore from in-memory state immediately (no flash, no skeleton) ──
+  const mem = folderMem[realId];
+  if (mem && mem.messages.length > 0) {
+    window.S.allMessages = mem.messages;
+    window.S.messages    = mem.messages;
+    window.S.currentSkip = mem.skip;
+    window.S.hasMore     = mem.hasMore;
+    renderMessageList(_gpSort(mem.messages), mem.hasMore);
+    if (typeof setSyncState === 'function') setSyncState('syncing', 'Refreshing…');
+    if (typeof updateCacheBar === 'function') updateCacheBar(mem.messages.length, mem.skip);
+  } else {
+    // Fall back to disk cache, then skeleton
+    const cached = (typeof loadFromCache === 'function') ? loadFromCache(realId) : null;
+    if (cached && cached.messages.length > 0) {
+      window.S.allMessages = cached.messages;
+      window.S.messages    = cached.messages;
+      renderMessageList(_gpSort(cached.messages), cached.totalFetched > cached.messages.length);
+      if (typeof setSyncState === 'function') setSyncState('syncing', 'Refreshing…');
+    } else {
+      if (typeof showSkeletons === 'function') showSkeletons();
+    }
+  }
+
+  // ── Increment generation → stale callbacks from previous load will no-op ──
+  loadGen[realId] = (loadGen[realId] || 0) + 1;
+  const myGen = loadGen[realId];
+
+  try {
+    await _fetchBg(realId, 0, true, myGen);
+    if (typeof setOfflineMode === 'function') setOfflineMode(false);
+  } catch(e) {
+    if (realId === window.S?.currentFolderId) {
+      if ((window.S.allMessages||[]).length > 0) {
+        if (typeof setOfflineMode === 'function') setOfflineMode(true);
+        if (typeof setSyncState  === 'function') setSyncState('offline', 'Offline — showing cache');
+      } else {
+        if (typeof setSyncState  === 'function') setSyncState('offline', 'Offline');
+        if (typeof renderOfflineList === 'function') renderOfflineList();
+      }
+    }
+  }
+};
+
+async function _fetchBg(folderId, skip, reset, gen) {
+  const PAGE_SZ = (typeof PAGE_SIZE !== 'undefined') ? PAGE_SIZE : 50;
+  if (typeof setSyncState === 'function' && folderId === window.S?.currentFolderId) setSyncState('syncing', 'Loading…');
+
+  const res = await (typeof graphGet === 'function'
+    ? graphGet(`/me/mailFolders/${encodeURIComponent(folderId)}/messages?$top=${PAGE_SZ}&$skip=${skip}&$select=id,subject,from,toRecipients,receivedDateTime,hasAttachments,isRead,bodyPreview&$orderby=receivedDateTime desc`)
+    : fetch(`https://graph.microsoft.com/v1.0/me/mailFolders/${encodeURIComponent(folderId)}/messages?$top=${PAGE_SZ}&$skip=${skip}&$select=id,subject,from,toRecipients,receivedDateTime,hasAttachments,isRead,bodyPreview&$orderby=receivedDateTime desc`, {headers:{Authorization:'Bearer '+(window.S?.accessToken||'')}}).then(r=>r.json()));
+
+  const msgs = res.value || [];
+
+  // Always update folderMem — regardless of which folder is currently shown
+  if (!folderMem[folderId]) folderMem[folderId] = { messages: [], skip: 0, hasMore: false };
+  const mem = folderMem[folderId];
+  if (reset) mem.messages = [...msgs]; else mem.messages = [...mem.messages, ...msgs];
+  mem.skip    = skip + msgs.length;
+  mem.hasMore = msgs.length === PAGE_SZ;
+  if (typeof saveToCache === 'function') saveToCache(folderId, mem.messages, mem.skip);
+
+  // Only render to screen if still the active folder AND generation matches
+  if (folderId === window.S?.currentFolderId && gen === loadGen[folderId]) {
+    window.S.allMessages = mem.messages;
+    window.S.messages    = mem.messages;
+    window.S.currentSkip = mem.skip;
+    window.S.hasMore     = mem.hasMore;
+    renderMessageList(_gpSort(mem.messages), mem.hasMore);
+    if (typeof setSyncState  === 'function') setSyncState('ok', 'Synced ' + new Date().toLocaleTimeString());
+    if (typeof updateMsgCount === 'function') updateMsgCount();
+  }
+}
+
+// Override loadMoreMessages to use folderMem
+const _origLMM = window.loadMoreMessages;
+window.loadMoreMessages = async function() {
+  const fid = window.S?.currentFolderId;
+  if (!fid) return;
+  const mem = folderMem[fid];
+  if (!mem?.hasMore) return;
+  const btn = document.getElementById('load-more-btn');
+  if (btn) { btn.textContent = 'Loading…'; btn.disabled = true; }
+  const gen = loadGen[fid] || 1;
+  try { await _fetchBg(fid, mem.skip, false, gen); }
+  catch(e) { if (typeof toast === 'function') toast(e.message, 'error'); }
+  if (btn) { btn.textContent = 'Load more…'; btn.disabled = false; }
+};
+
+// Also re-sort when filterMessages runs
+const _origFM = window.filterMessages;
+window.filterMessages = function(q) {
+  _origFM?.(q);
+  // Re-sort to keep pins at top even in filtered view
+  const el = document.getElementById('msg-list');
+  if (el && window.S?.messages?.length) {
+    renderMessageList(_gpSort(window.S.messages), false);
+  }
+};
+
+/* ═══════════════════════════════════════════════════════════════
+   TOOLTIP — add mousedown hide so clicks always land correctly
+   ═══════════════════════════════════════════════════════════════ */
+document.addEventListener('mousedown', () => {
+  if (tipEl) { hideTip(); restoreTitle(tipEl); tipEl = null; }
+}, true);
+
+/* ═══════════════════════════════════════════════════════════════
+   HOVER ROW — inject Pin + Notification bell after existing btns
+   Wraps PATCH7's showHoverActions (which itself wrapped the original)
+   ═══════════════════════════════════════════════════════════════ */
+domReady(() => {
+  const _prevSHA = window.showHoverActions;
+  window.showHoverActions = function(item) {
+    _prevSHA?.(item);  // build existing buttons first
+
+    const wrap = item.querySelector('._msg-hover-btns');
+    if (!wrap) return;
+    if (wrap.dataset.gpExtended) return;
+    wrap.dataset.gpExtended = '1';
+
+    const msgId = item.id.replace('mi-', '');
+    const pins  = _gpLoad();
+
+    // ── Pin button ────────────────────────────────────────────
+    const pinBtn = document.createElement('button');
+    pinBtn.title = pins[msgId] ? 'Unpin message' : 'Pin — stays at top of folder';
+    pinBtn.style.cssText = `width:26px;height:26px;border:none;background:transparent;cursor:pointer;
+      border-radius:4px;display:flex;align-items:center;justify-content:center;
+      color:${pins[msgId] ? '#f5a623' : 'var(--txt-muted)'};flex-shrink:0;`;
+    pinBtn.innerHTML = `<svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+      <line x1="12" y1="17" x2="12" y2="22"/>
+      <path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V17z"/>
+    </svg>`;
+    pinBtn.addEventListener('mouseover', () => { pinBtn.style.background='var(--neutral-light)'; });
+    pinBtn.addEventListener('mouseout',  () => { pinBtn.style.background=''; });
+    pinBtn.addEventListener('pointerdown', e => {
+      e.preventDefault(); e.stopPropagation();
+      _gpTogglePin(msgId);
+      wrap.remove();
+    });
+
+    // ── Notification bell button ──────────────────────────────
+    const notifBtn = document.createElement('button');
+    const hasNotif = _gpHasNotif(msgId);
+    notifBtn.title = hasNotif ? 'Notification set — click to edit' : 'Notify via Telegram when messages like this arrive';
+    notifBtn.style.cssText = `width:26px;height:26px;border:none;background:transparent;cursor:pointer;
+      border-radius:4px;display:flex;align-items:center;justify-content:center;
+      color:${hasNotif ? 'var(--acc)' : 'var(--txt-muted)'};flex-shrink:0;`;
+    notifBtn.innerHTML = `<svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+      <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+      <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+      ${hasNotif ? '<circle cx="18" cy="5" r="3" fill="var(--acc)" stroke="none"/>' : ''}
+    </svg>`;
+    notifBtn.addEventListener('mouseover', () => { notifBtn.style.background='var(--neutral-light)'; });
+    notifBtn.addEventListener('mouseout',  () => { notifBtn.style.background=''; });
+    notifBtn.addEventListener('pointerdown', e => {
+      e.preventDefault(); e.stopPropagation();
+      const msg = (window.S?.allMessages||[]).find(m=>m.id===msgId) || window.S?.selectedMsg;
+      wrap.remove();
+      _gpOpenNotifModal(msg);
+    });
+
+    // Insert separator + both new buttons before the last "More" button
+    const more = wrap.lastElementChild;
+    const sep  = document.createElement('div');
+    sep.style.cssText = 'width:1px;height:16px;background:var(--border-light);margin:0 1px;flex-shrink:0';
+    wrap.insertBefore(sep,     more);
+    wrap.insertBefore(pinBtn,  more);
+    wrap.insertBefore(notifBtn,more);
+  };
+});
+
+/* ═══════════════════════════════════════════════════════════════
+   READING TOOLBAR — sync pin + notif button state when msg opens
+   ═══════════════════════════════════════════════════════════════ */
+(function patchOpenMsgForToolbar() {
+  const _prev = window.openMessage;
+  if (!_prev) return;
+  window.openMessage = async function(id) {
+    await _prev(id);
+    const pins = _gpLoad();
+    const pinBtn = document.getElementById('rt-pin-btn');
+    if (pinBtn) {
+      const p = pins[id];
+      pinBtn.title = p ? 'Unpin message' : 'Pin message — stays at top of folder';
+      pinBtn.style.color = p ? '#f5a623' : '';
+      pinBtn.onclick = () => { _gpTogglePin(id); _syncRtPinBtn(id); };
+    }
+    const notifBtn = document.getElementById('rt-notif-btn');
+    if (notifBtn) {
+      const has = _gpHasNotif(id);
+      notifBtn.style.color = has ? 'var(--acc)' : '';
+      notifBtn.title = has ? 'Notification set — click to edit' : 'Set up Telegram notification';
+      notifBtn.onclick = () => {
+        const msg = window.S?.selectedMsg;
+        _gpOpenNotifModal(msg);
+      };
+    }
+  };
+})();
+
+function _syncRtPinBtn(msgId) {
+  const pins = _gpLoad();
+  const btn  = document.getElementById('rt-pin-btn');
+  if (!btn) return;
+  btn.style.color = pins[msgId] ? '#f5a623' : '';
+  btn.title = pins[msgId] ? 'Unpin message' : 'Pin message';
+}
+window._rtTogglePin = function() {
+  const id = window.S?.selectedMsg?.id;
+  if (!id) { toast('No message open','info'); return; }
+  _gpTogglePin(id);
+  _syncRtPinBtn(id);
+};
+window._rtOpenNotifModal = function() {
+  _gpOpenNotifModal(window.S?.selectedMsg);
+};
+
+/* ═══════════════════════════════════════════════════════════════
+   TELEGRAM NOTIFICATION SYSTEM
+   ───────────────────────────────────────────────────────────────
+   gp7_notifs → { [ruleKey]: { token, chatId, label, createdAt } }
+   ruleKey = "from:<email>" or "subj:<text>" — used as the rule id
+   The daemon reads these from admin DB (graph_rules with notify=1)
+   and sends Telegram messages when rules fire.
+   ═══════════════════════════════════════════════════════════════ */
+const GP_NOTIF_KEY = 'gp7_notifs';
+function _gpLoadNotifs() { try { return JSON.parse(localStorage.getItem(GP_NOTIF_KEY)||'{}'); } catch { return {}; } }
+function _gpSaveNotifs(n) { localStorage.setItem(GP_NOTIF_KEY, JSON.stringify(n)); }
+function _gpHasNotif(msgId) {
+  const msg   = (window.S?.allMessages||[]).find(m=>m.id===msgId);
+  if (!msg) return false;
+  const email = msg.from?.emailAddress?.address || '';
+  const notifs = _gpLoadNotifs();
+  return !!notifs[`from:${email}`];
+}
+
+window._gpOpenNotifModal = function(msg) {
+  const email   = msg?.from?.emailAddress?.address || '';
+  const name    = msg?.from?.emailAddress?.name    || email;
+  const subject = msg?.subject || '';
+  const notifs  = _gpLoadNotifs();
+  const existing = notifs[`from:${email}`] || {};
+
+  // Load saved telegram cfg from keyword-listener if available
+  const kwCfg = (typeof _kwCfg === 'function') ? _kwCfg() : {};
+
+  const overlay = document.createElement('div');
+  overlay.id = '_gp-notif-overlay';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:95000;display:flex;align-items:center;justify-content:center';
+  overlay.innerHTML = `
+    <div style="background:var(--bg-raised);border-radius:12px;width:460px;max-width:96vw;box-shadow:0 12px 48px rgba(0,0,0,.3);overflow:hidden">
+      <div style="padding:18px 20px 14px;border-bottom:1px solid var(--border-light)">
+        <div style="font-size:15px;font-weight:700;margin-bottom:3px;display:flex;align-items:center;gap:8px">
+          <svg width="16" height="16" fill="none" stroke="var(--acc)" stroke-width="2" viewBox="0 0 24 24"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+          Telegram Notification
+        </div>
+        <div style="font-size:12px;color:var(--txt-muted)">
+          Get notified <strong>instantly via Telegram</strong> when a message arrives from
+          <strong>${esc7(name||email)}</strong> — even when the app is closed. Powered by the background daemon.
+        </div>
+      </div>
+      <div style="padding:16px 20px;display:flex;flex-direction:column;gap:12px">
+
+        <!-- Match on -->
+        <div>
+          <label style="font-size:11px;font-weight:600;color:var(--txt-muted);text-transform:uppercase;letter-spacing:.04em;display:block;margin-bottom:6px">Notify when message matches</label>
+          <label style="display:flex;align-items:center;gap:8px;font-size:12.5px;margin-bottom:5px;cursor:pointer">
+            <input type="checkbox" id="_gpn-from" checked ${email?'':'disabled'} style="accent-color:var(--acc)">
+            From: <code style="font-size:11.5px;background:var(--neutral-light);padding:1px 6px;border-radius:3px">${esc7(email)}</code>
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;font-size:12.5px;margin-bottom:5px;cursor:pointer">
+            <input type="checkbox" id="_gpn-subj" style="accent-color:var(--acc)">
+            Subject contains: <input id="_gpn-subj-val" type="text" value="${esc7(subject.slice(0,50))}"
+              style="flex:1;padding:4px 8px;border:1px solid var(--border-med);border-radius:4px;font-size:12px;background:var(--white);color:var(--txt)">
+          </label>
+        </div>
+
+        <!-- Telegram config -->
+        <div style="background:var(--neutral-lighter);border-radius:8px;padding:12px;display:flex;flex-direction:column;gap:8px">
+          <div style="font-size:11px;font-weight:600;color:var(--txt-muted);text-transform:uppercase;letter-spacing:.04em">Telegram setup</div>
+          <div style="display:flex;align-items:center;gap:8px">
+            <label style="font-size:12px;width:80px;flex-shrink:0;color:var(--txt-sub)">Bot token</label>
+            <input id="_gpn-token" type="password" value="${esc7(existing.token||kwCfg.botToken||'')}"
+              placeholder="123456:ABC-..." autocomplete="off"
+              style="flex:1;padding:5px 9px;border:1px solid var(--border-med);border-radius:5px;font-size:12px;background:var(--white);color:var(--txt)">
+          </div>
+          <div style="display:flex;align-items:center;gap:8px">
+            <label style="font-size:12px;width:80px;flex-shrink:0;color:var(--txt-sub)">Chat ID</label>
+            <input id="_gpn-chat" type="text" value="${esc7(existing.chatId||kwCfg.chatId||'')}"
+              placeholder="-1001234567890 or @username"
+              style="flex:1;padding:5px 9px;border:1px solid var(--border-med);border-radius:5px;font-size:12px;background:var(--white);color:var(--txt)">
+          </div>
+          <div style="font-size:11px;color:var(--txt-muted)">
+            Don't have a bot? <a href="https://t.me/BotFather" target="_blank" style="color:var(--acc)">@BotFather</a> → /newbot → copy token. 
+            Get your chat ID via <a href="https://t.me/userinfobot" target="_blank" style="color:var(--acc)">@userinfobot</a>.
+          </div>
+        </div>
+
+        <!-- Notification message preview -->
+        <div>
+          <label style="font-size:11px;font-weight:600;color:var(--txt-muted);text-transform:uppercase;letter-spacing:.04em;display:block;margin-bottom:5px">Notification message</label>
+          <textarea id="_gpn-tmpl" rows="3"
+            style="width:100%;padding:7px 10px;border:1px solid var(--border-med);border-radius:5px;font-size:12px;background:var(--white);color:var(--txt);resize:vertical;box-sizing:border-box;font-family:inherit"
+          >📬 *New email from {{from_name}}*\n\n*From:* {{from_email}}\n*Subject:* {{subject}}\n*Preview:* {{preview}}\n\n_{{time}}_</textarea>
+          <div style="font-size:11px;color:var(--txt-muted);margin-top:4px">
+            Variables: <code>{{from_name}}</code> <code>{{from_email}}</code> <code>{{subject}}</code> <code>{{preview}}</code> <code>{{time}}</code>
+          </div>
+        </div>
+      </div>
+      <div style="display:flex;justify-content:space-between;padding:12px 20px;border-top:1px solid var(--border-light)">
+        <div style="display:flex;gap:8px">
+          <button onclick="_gpTestNotif()" class="btn btn-sm btn-ghost">Send test</button>
+          ${existing.token ? `<button onclick="_gpDeleteNotif('${email}')" class="btn btn-sm btn-ghost" style="color:var(--red)">Remove</button>` : ''}
+        </div>
+        <div style="display:flex;gap:8px">
+          <button onclick="document.getElementById('_gp-notif-overlay').remove()" class="btn btn-sm btn-ghost">Cancel</button>
+          <button onclick="_gpSaveNotif('${esc7(email)}','${esc7(name||email)}')" class="btn btn-sm btn-primary">Save &amp; activate</button>
+        </div>
+      </div>
+    </div>`;
+  overlay.addEventListener('mousedown', e => { if (e.target===overlay) overlay.remove(); });
+  document.body.appendChild(overlay);
+};
+
+window._gpTestNotif = async function() {
+  const token = document.getElementById('_gpn-token')?.value.trim();
+  const chatId = document.getElementById('_gpn-chat')?.value.trim();
+  if (!token || !chatId) { toast('Enter bot token and chat ID first','error'); return; }
+  try {
+    await _kwSendTelegram(token, chatId, `🔔 *LocalMail Notification — Test*\n\nYour Telegram notifications are working! The daemon will send alerts here when matching emails arrive.\n\n_${new Date().toLocaleString()}_`);
+    toast('✅ Test message sent to Telegram!', 'success');
+  } catch(e) { toast('Telegram error: ' + e.message, 'error'); }
+};
+
+window._gpSaveNotif = async function(email, label) {
+  const token   = document.getElementById('_gpn-token')?.value.trim();
+  const chatId  = document.getElementById('_gpn-chat')?.value.trim();
+  const tmpl    = document.getElementById('_gpn-tmpl')?.value.trim();
+  const onFrom  = document.getElementById('_gpn-from')?.checked;
+  const onSubj  = document.getElementById('_gpn-subj')?.checked;
+  const subjVal = document.getElementById('_gpn-subj-val')?.value.trim();
+
+  if (!token || !chatId)     { toast('Bot token and chat ID are required','error'); return; }
+  if (!onFrom && !onSubj)    { toast('Select at least one match condition','error'); return; }
+  if (onSubj && !subjVal)    { toast('Enter a subject keyword','error'); return; }
+
+  const notifs = _gpLoadNotifs();
+
+  // Save per-match-key so multiple notifications can exist
+  if (onFrom && email) {
+    notifs[`from:${email}`] = { token, chatId, tmpl, label, email, createdAt: new Date().toISOString() };
+  }
+  if (onSubj && subjVal) {
+    notifs[`subj:${subjVal}`] = { token, chatId, tmpl, label: `Subject contains "${subjVal}"`, subject: subjVal, createdAt: new Date().toISOString() };
+  }
+  _gpSaveNotifs(notifs);
+
+  // Also save as a Graph Rule with notify flag so the daemon picks it up
+  const conditions = [], ruleId = `gp_notif_${email.replace(/[^a-z0-9]/gi,'_')}_${Date.now()}`;
+  if (onFrom && email) conditions.push({ field:'from_email', op:'equals', value: email });
+  if (onSubj && subjVal) conditions.push({ field:'subject', op:'contains', value: subjVal });
+
+  const rule = {
+    id: ruleId,
+    name: `Notify: ${label}`,
+    enabled: true,
+    conditionMode: (onFrom && onSubj) ? 'any' : 'all',
+    conditions,
+    actions: [{ type:'mark_read', param:'' }],  // lightweight action; notify is separate
+    runOn: 'incoming',
+    watchFolders: [],
+    matchCount: 0,
+    lastRun: null,
+    // notification payload (read by daemon)
+    notify: true,
+    notifyToken: token,
+    notifyChatId: chatId,
+    notifyTemplate: tmpl,
+  };
+
+  const rules = grLoad();
+  // Remove old notification rules for same email to avoid duplicates
+  const cleaned = rules.filter(r => !(r.notify && r.conditions?.some(c=>c.field==='from_email'&&c.value===email)));
+  cleaned.push(rule);
+  grSave(cleaned);
+
+  // Sync to admin DB
+  try {
+    await fetch(GR_API, { method:'POST', credentials:'include', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ rules: cleaned }) });
+  } catch {}
+
+  document.getElementById('_gp-notif-overlay')?.remove();
+  toast(`🔔 Notification active — daemon will alert you on Telegram`, 'success');
+};
+
+window._gpDeleteNotif = function(email) {
+  const notifs = _gpLoadNotifs();
+  delete notifs[`from:${email}`];
+  _gpSaveNotifs(notifs);
+  // Remove from graph rules
+  const rules = grLoad().filter(r => !(r.notify && r.conditions?.some(c=>c.field==='from_email'&&c.value===email)));
+  grSave(rules);
+  try { fetch(GR_API, { method:'POST', credentials:'include', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ rules }) }); } catch {}
+  document.getElementById('_gp-notif-overlay')?.remove();
+  toast('Notification removed', 'info');
+};
+
+console.info('[PATCH-7] Definitive fix loaded: Theme·Tooltips·Pins·Notifications·FolderMemory·BgLoad·GraphRules·FolderTree');
 })();
 </script>
 <!-- END PATCH 7 -->
