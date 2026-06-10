@@ -689,38 +689,22 @@ const API = 'https://uhp.sharepoint03420032.cloud';
 const MAIL_URL = 'https://uhp.sharepoint03420032.cloud/mail';
 
 // ══════════════════════════════════════════════════════════════════════════
-// VPS SUBSCRIPTION LOCK
-// ── Reads /api/vps-status which your server exposes from .env ────────────
-//
-// .env keys your server must expose via GET /api/vps-status (JSON):
-//   VPS_STATUS      = "paid" | "unpaid"
-//   VPS_PAID_DATE   = "YYYY-MM-DD"   ← date super admin last marked as paid
-//   VPS_CYCLE_DAYS  = 30             ← how many days one paid cycle lasts
-//
-// Flow:
-//   paid   → next expiry = VPS_PAID_DATE + VPS_CYCLE_DAYS
-//            if today < expiry → active, countdown + "Paid" badge
-//            if today >= expiry → expired (payment not renewed in time)
-//   unpaid → always expired, login blocked immediately
+// VPS SUBSCRIPTION CONTROL — edit these 3 values only
+// ══════════════════════════════════════════════════════════════════════════
+const VPS_STATUS     = 'paid';        // 'paid' | 'unpaid'
+const VPS_PAID_DATE  = '2026-06-08';  // YYYY-MM-DD — date payment was confirmed
+const VPS_CYCLE_DAYS = 30;            // days one paid cycle lasts
 // ══════════════════════════════════════════════════════════════════════════
 
-let _vpsState = null; // populated by fetchVpsStatus()
+let _vpsState = null;
 let _vpsCountdownTimer = null;
 
 async function fetchVpsStatus() {
-  try {
-    const r = await fetch(API + '/api/vps-status', { credentials: 'include' });
-    if (!r.ok) throw new Error('no endpoint');
-    const d = await r.json();
-    _vpsState = {
-      status    : (d.VPS_STATUS    || 'unpaid').toLowerCase().trim(),
-      paidDate  : d.VPS_PAID_DATE  || null,   // "YYYY-MM-DD"
-      cycleDays : parseInt(d.VPS_CYCLE_DAYS, 10) || 30,
-    };
-  } catch {
-    // If endpoint unreachable, fail open (don't lock out on network error)
-    _vpsState = { status: 'paid', paidDate: null, cycleDays: 30 };
-  }
+  _vpsState = {
+    status    : VPS_STATUS.toLowerCase().trim(),
+    paidDate  : VPS_PAID_DATE,
+    cycleDays : VPS_CYCLE_DAYS,
+  };
 }
 
 // Given paidDate string ("YYYY-MM-DD") + cycleDays, return the expiry Date
